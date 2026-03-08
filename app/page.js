@@ -109,6 +109,9 @@ export default function Home() {
     } else {
       if (!authForm.name || !authForm.email || !authForm.password) { setAuthErr('Tous les champs requis'); return }
       if (authForm.password.length < 6) { setAuthErr('Mot de passe: 6 caractères min.'); return }
+      // Vérifier la limite de 10 utilisateurs
+      const { data: userCount } = await supabase.rpc('count_users')
+      if (userCount >= 10) { setAuthErr('Nombre maximum de comptes atteint (10/10). Contactez l\'administrateur.'); return }
       const { error } = await signUp(authForm.email, authForm.password, authForm.name)
       if (error) setAuthErr(error.message)
     }
@@ -186,37 +189,38 @@ export default function Home() {
 // AUTH PAGE
 // ═══════════════════════════════════════════════════════════════
 function AuthPage({ mode, setMode, form, setForm, err, onSubmit }) {
+  const inputStyle = { background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9', width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-96 p-8 rounded-xl" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-        <div className="text-center mb-6">
-          <div style={{ background: 'linear-gradient(135deg,#22d3ee,#6366f1)' }} className="w-11 h-11 rounded-xl inline-flex items-center justify-center font-mono font-bold text-lg text-white mb-3">P</div>
-          <h1 className="text-xl font-bold text-slate-100">PortfolioLab</h1>
-          <p className="text-slate-500 text-sm">Portfolio PEA — {ALL_SECURITIES.length} titres</p>
+    <div style={{ minHeight: '100vh', background: '#0a0e17', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <div style={{ width: 380, padding: 32, background: '#111827', borderRadius: 14, border: '1px solid #1e293b' }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ width: 44, height: 44, background: 'linear-gradient(135deg,#22d3ee,#6366f1)', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Space Mono', monospace", fontWeight: 700, fontSize: 18, color: '#fff', marginBottom: 12 }}>P</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#f1f5f9', margin: '0 0 4px' }}>PortfolioLab</h1>
+          <p style={{ color: '#94a3b8', fontSize: 13, margin: 0 }}>Portfolio PEA — {ALL_SECURITIES.length} titres</p>
         </div>
-        <div className="flex gap-1 p-1 rounded-lg mb-5" style={{ background: '#0a0e17' }}>
+        <div style={{ display: 'flex', gap: 3, background: '#0a0e17', borderRadius: 8, padding: 3, marginBottom: 20 }}>
           {['login','register'].map(m => (
-            <button key={m} onClick={() => setMode(m)} className="flex-1 py-2 rounded-md text-xs font-semibold transition-colors" style={{ background: mode === m ? '#1e293b' : 'transparent', color: mode === m ? '#22d3ee' : '#64748b' }}>
+            <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: 9, border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12, fontFamily: 'inherit', background: mode === m ? '#1e293b' : 'transparent', color: mode === m ? '#22d3ee' : '#94a3b8' }}>
               {m === 'login' ? 'Connexion' : 'Inscription'}
             </button>
           ))}
         </div>
         {mode === 'register' && (
-          <div className="mb-3">
-            <label className="block text-xs text-slate-400 mb-1">Nom</label>
-            <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Jean Dupont" className="w-full px-3 py-2.5 rounded-lg text-sm text-slate-100 outline-none" style={{ background: '#0a0e17', border: '1px solid #1e293b' }} />
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 5 }}>Nom complet</label>
+            <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Jean Dupont" style={inputStyle} />
           </div>
         )}
-        <div className="mb-3">
-          <label className="block text-xs text-slate-400 mb-1">Email</label>
-          <input value={form.email} onChange={e => setForm({...form, email: e.target.value})} type="email" placeholder="votre@email.com" className="w-full px-3 py-2.5 rounded-lg text-sm text-slate-100 outline-none" style={{ background: '#0a0e17', border: '1px solid #1e293b' }} />
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 5 }}>Email</label>
+          <input value={form.email} onChange={e => setForm({...form, email: e.target.value})} type="email" placeholder="votre@email.com" style={inputStyle} />
         </div>
-        <div className="mb-5">
-          <label className="block text-xs text-slate-400 mb-1">Mot de passe</label>
-          <input value={form.password} onChange={e => setForm({...form, password: e.target.value})} type="password" placeholder="••••••" className="w-full px-3 py-2.5 rounded-lg text-sm text-slate-100 outline-none" style={{ background: '#0a0e17', border: '1px solid #1e293b' }} onKeyDown={e => e.key === 'Enter' && onSubmit()} />
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 5 }}>Mot de passe</label>
+          <input value={form.password} onChange={e => setForm({...form, password: e.target.value})} type="password" placeholder="••••••" style={inputStyle} onKeyDown={e => { if (e.key === 'Enter') onSubmit() }} />
         </div>
-        {err && <div className="p-2.5 rounded-lg text-xs text-red-300 mb-3" style={{ background: '#7f1d1d30', border: '1px solid #991b1b' }}>{err}</div>}
-        <button onClick={onSubmit} className="w-full py-3 rounded-lg text-white font-bold text-sm cursor-pointer" style={{ background: 'linear-gradient(135deg,#22d3ee,#6366f1)' }}>
+        {err && <div style={{ background: '#7f1d1d30', border: '1px solid #991b1b', padding: '9px 12px', borderRadius: 7, color: '#fca5a5', fontSize: 12, marginBottom: 14 }}>{err}</div>}
+        <button onClick={onSubmit} style={{ width: '100%', padding: 13, background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
           {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
         </button>
       </div>
