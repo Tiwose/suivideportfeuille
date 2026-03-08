@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase, signUp, signIn, signOut, getUser, getPositions, addPosition, deletePosition } from '../lib/supabase'
 import { ALL_SECURITIES } from '../lib/stocks-db'
 
@@ -129,7 +129,7 @@ export default function Home() {
     const sec = ALL_SECURITIES.find(s => s.symbol === pos.symbol)
     await addPosition(user.id, {
       symbol: pos.symbol,
-      name: sec?.name || pos.symbol,
+      name: pos.name || sec?.name || pos.symbol,
       quantity: pos.qty,
       buyPrice: pos.pru,
     })
@@ -540,43 +540,126 @@ function AddModal({ onClose, onAdd }) {
   const [sel, setSel] = useState(null)
   const [qty, setQty] = useState('')
   const [pru, setPru] = useState('')
-  const filtered = useMemo(() => {
+  const [yahooResults, setYahooResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [mode, setMode] = useState('local') // 'local' or 'yahoo'
+  const searchTimeout = useRef(null)
+
+  // Local search in static DB
+  const localFiltered = useMemo(() => {
     if (!search) return ALL_SECURITIES.slice(0, 20)
     const q = search.toLowerCase()
     return ALL_SECURITIES.filter(s => s.name.toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q)).slice(0, 20)
   }, [search])
 
+  // Yahoo Finance live search with debounce
+  const searchYahoo = useCallback(async (query) => {
+    if (!query || query.length < 2) { setYahooResults([]); return }
+    setSearching(true)
+    try {
+      const res = await fetch('/api/search?q=' + encodeURIComponent(query))
+      const data = await res.json()
+      setYahooResults(data.results || [])
+    } catch (e) { setYahooResults([]) }
+    finally { setSearching(false) }
+  }, [])
+
+  const handleSearchChange = (val) => {
+    setSearch(val)
+    if (mode === 'yahoo') {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current)
+      searchTimeout.current = setTimeout(() => searchYahoo(val), 400)
+    }
+  }
+
+  const results = mode === 'local' ? localFiltered : yahooResults
+  const inputStyle = { background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9', width: '100%', padding: '9px 12px', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
+  const typeColors = { 'Action': '#9B59B6', 'ETF': '#3498DB', 'Crypto': '#F39C12', 'Matière première': '#27AE60', 'Indice': '#E74C3C', 'OPCVM': '#1ABC9C', 'Devise': '#8E44AD' }
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="w-[420px] rounded-xl overflow-hidden" style={{ background: '#111827', border: '1px solid #1e293b' }} onClick={e => e.stopPropagation()}>
-        <div className="px-4 py-3 flex justify-between items-center" style={{ borderBottom: '1px solid #1e293b' }}>
-          <h3 className="text-sm font-semibold">Ajouter une position</h3>
-          <button onClick={onClose} className="text-slate-500 text-lg">✕</button>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={onClose}>
+      <div style={{ width: 460, background: '#111827', borderRadius: 12, border: '1px solid #1e293b', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Ajouter une position</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18 }}>✕</button>
         </div>
-        <div className="p-4">
+        <div style={{ padding: 16 }}>
           {!sel ? (
             <div>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="LVMH, CW8, Schneider..." autoFocus className="w-full px-3 py-2 rounded-md text-xs mb-2 outline-none" style={{ background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9' }} />
-              <div className="max-h-72 overflow-y-auto">
-                {filtered.map(s => (
-                  <div key={s.symbol} onClick={() => setSel(s)} className="px-2 py-2 rounded-md cursor-pointer flex justify-between hover:bg-slate-800/50 transition-colors">
-                    <div><div className="font-semibold text-xs">{s.name}</div><div className="text-[9px] text-slate-500">{s.symbol} • {s.type}</div></div>
+              {/* Toggle local / Yahoo */}
+              <div style={{ display: 'flex', gap: 3, background: '#0a0e17', borderRadius: 7, padding: 3, marginBottom: 10 }}>
+                <button onClick={() => { setMode('local'); setYahooResults([]) }} style={{ flex: 1, padding: 7, border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 600, fontSize: 11, fontFamily: 'inherit', background: mode === 'local' ? '#1e293b' : 'transparent', color: mode === 'local' ? '#22d3ee' : '#94a3b8' }}>
+                  PEA ({ALL_SECURITIES.length} titres)
+                </button>
+                <button onClick={() => setMode('yahoo')} style={{ flex: 1, padding: 7, border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 600, fontSize: 11, fontFamily: 'inherit', background: mode === 'yahoo' ? '#1e293b' : 'transparent', color: mode === 'yahoo' ? '#f59e0b' : '#94a3b8' }}>
+                  🌍 Recherche mondiale
+                </button>
+              </div>
+
+              <input
+                value={search}
+                onChange={e => handleSearchChange(e.target.value)}
+                placeholder={mode === 'local' ? "LVMH, CW8, Schneider, Veolia..." : "iShares MSCI World, Bitcoin, Tesla, Gold..."}
+                autoFocus
+                style={{ ...inputStyle, marginBottom: 8 }}
+              />
+
+              {mode === 'yahoo' && search.length < 2 && (
+                <div style={{ padding: '8px 0', fontSize: 11, color: '#64748b', textAlign: 'center' }}>Tapez au moins 2 caractères pour chercher sur Yahoo Finance</div>
+              )}
+              {searching && <div style={{ padding: '8px 0', fontSize: 11, color: '#22d3ee', textAlign: 'center' }}>Recherche en cours...</div>}
+
+              <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                {results.map(s => (
+                  <div key={s.symbol} onClick={() => setSel(s)} style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onMouseEnter={e => e.currentTarget.style.background = '#1e293b'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
+                      <div style={{ fontSize: 10, color: '#64748b' }}>{s.symbol} {s.exchange ? '• ' + s.exchange : ''}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 8 }}>
+                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: (typeColors[s.type] || '#64748b') + '20', color: typeColors[s.type] || '#64748b', fontWeight: 600 }}>{s.type}</span>
+                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8' }}>{s.region}</span>
+                    </div>
                   </div>
                 ))}
+                {mode === 'local' && !results.length && search && (
+                  <div style={{ padding: 16, textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>Aucun résultat dans la base PEA</div>
+                    <button onClick={() => { setMode('yahoo'); searchYahoo(search) }} style={{ background: '#f59e0b20', border: '1px solid #f59e0b40', color: '#f59e0b', padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+                      🌍 Chercher sur Yahoo Finance
+                    </button>
+                  </div>
+                )}
+                {mode === 'yahoo' && !results.length && search.length >= 2 && !searching && (
+                  <div style={{ padding: 16, textAlign: 'center', fontSize: 11, color: '#64748b' }}>Aucun résultat trouvé</div>
+                )}
               </div>
             </div>
           ) : (
             <div>
-              <div className="p-2 rounded-md mb-3 flex justify-between items-center" style={{ background: '#0a0e17' }}>
-                <div><div className="font-bold text-xs">{sel.name}</div><div className="text-[9px] text-slate-500">{sel.symbol}</div></div>
-                <button onClick={() => setSel(null)} className="text-[9px] text-slate-400 px-2 py-1 rounded" style={{ background: '#1e293b' }}>Changer</button>
+              <div style={{ padding: 10, background: '#0a0e17', borderRadius: 7, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#f1f5f9' }}>{sel.name}</div>
+                  <div style={{ fontSize: 10, color: '#64748b', display: 'flex', gap: 6, marginTop: 2 }}>
+                    <span>{sel.symbol}</span>
+                    <span style={{ padding: '0 5px', borderRadius: 3, background: (typeColors[sel.type] || '#64748b') + '20', color: typeColors[sel.type] || '#64748b', fontWeight: 600 }}>{sel.type}</span>
+                    <span>{sel.region}</span>
+                  </div>
+                </div>
+                <button onClick={() => setSel(null)} style={{ background: '#1e293b', border: 'none', color: '#94a3b8', padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 10, fontFamily: 'inherit' }}>Changer</button>
               </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div><label className="text-[10px] text-slate-400">Quantité</label><input value={qty} onChange={e => setQty(e.target.value)} type="number" className="w-full px-2 py-2 rounded-md text-xs outline-none mt-1" style={{ background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9' }} /></div>
-                <div><label className="text-[10px] text-slate-400">Prix d'achat €</label><input value={pru} onChange={e => setPru(e.target.value)} type="number" step="0.01" className="w-full px-2 py-2 rounded-md text-xs outline-none mt-1" style={{ background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9' }} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Quantité</label>
+                  <input value={qty} onChange={e => setQty(e.target.value)} type="number" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Prix d'achat (€)</label>
+                  <input value={pru} onChange={e => setPru(e.target.value)} type="number" step="0.01" style={inputStyle} />
+                </div>
               </div>
-              <button onClick={() => { if (qty && pru) onAdd({ symbol: sel.symbol, qty: parseFloat(qty), pru: parseFloat(pru) }) }} disabled={!qty || !pru} className="w-full py-2.5 rounded-md text-xs font-bold text-white" style={{ background: qty && pru ? 'linear-gradient(135deg,#22d3ee,#6366f1)' : '#1e293b', color: qty && pru ? '#fff' : '#64748b' }}>
-                Ajouter
+              <button onClick={() => { if (qty && pru) onAdd({ symbol: sel.symbol, name: sel.name, qty: parseFloat(qty), pru: parseFloat(pru) }) }} disabled={!qty || !pru} style={{ width: '100%', padding: 11, background: qty && pru ? 'linear-gradient(135deg,#22d3ee,#6366f1)' : '#1e293b', border: 'none', borderRadius: 7, color: qty && pru ? '#fff' : '#64748b', fontWeight: 700, fontSize: 13, cursor: qty && pru ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                Ajouter au portfolio
               </button>
             </div>
           )}
