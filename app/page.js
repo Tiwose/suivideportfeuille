@@ -145,37 +145,38 @@ export default function Home() {
 
   const openStock = (sym) => { setSelSym(sym); setPage('stock') }
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500">Chargement...</div>
+  if (loading) return <div style={{ minHeight: '100vh', background: '#0a0e17', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>Chargement...</div>
 
   if (!user) return <AuthPage mode={authMode} setMode={setAuthMode} form={authForm} setForm={setAuthForm} err={authErr} onSubmit={handleAuth} />
 
   const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'User'
 
   return (
-    <div className="min-h-screen">
+    <div style={{ minHeight: '100vh', background: '#0a0e17', color: '#e2e8f0', fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
       {/* NAV */}
-      <nav style={{ background: '#0f1422ee', borderBottom: '1px solid #1e293b', backdropFilter: 'blur(12px)' }} className="sticky top-0 z-50 px-5 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-5">
-          <div onClick={() => setPage('dashboard')} className="flex items-center gap-2 cursor-pointer">
-            <div style={{ background: 'linear-gradient(135deg,#22d3ee,#6366f1)' }} className="w-7 h-7 rounded-md flex items-center justify-center font-mono font-bold text-sm text-white">P</div>
-            <span className="font-bold text-base">PortfolioLab</span>
+      <nav style={{ background: '#0f1422ee', borderBottom: '1px solid #1e293b', backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 50, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div onClick={() => setPage('dashboard')} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg,#22d3ee,#6366f1)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Space Mono', monospace", fontWeight: 700, fontSize: 14, color: '#fff' }}>P</div>
+            <span style={{ fontWeight: 700, fontSize: 16, color: '#f1f5f9' }}>PortfolioLab</span>
           </div>
           {['dashboard','market','projection','exposure'].map(id => (
-            <button key={id} onClick={() => setPage(id)} className="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors" style={{ background: page === id ? '#1e293b' : 'transparent', color: page === id ? '#22d3ee' : '#64748b' }}>
-              {id === 'dashboard' ? 'Portfolio' : id === 'market' ? 'Marché' : id === 'projection' ? 'Projections' : 'Exposition'}
+            <button key={id} onClick={() => setPage(id)} style={{ background: page === id ? '#1e293b' : 'transparent', color: page === id ? '#22d3ee' : '#64748b', border: 'none', padding: '7px 14px', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.2s' }}>
+              {id === 'dashboard' ? '📊 Portfolio' : id === 'market' ? '🏛 Marché' : id === 'projection' ? '📈 Projections' : '🎯 Exposition'}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">{userName}</span>
-          <button onClick={handleLogout} className="text-xs text-slate-400 border border-slate-700 px-2 py-1 rounded-md hover:text-white transition-colors">Déconnexion</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>{userName}</span>
+          <button onClick={handleLogout} style={{ background: 'none', border: '1px solid #334155', color: '#94a3b8', padding: '6px 12px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.2s' }}>Déconnexion</button>
         </div>
       </nav>
 
-      <div className="max-w-[1400px] mx-auto p-5">
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '18px 20px' }}>
         {page === 'dashboard' && <DashPage positions={positions} gp={gp} tv={tv} ti={ti} openStock={openStock} onAdd={() => setShowAdd(true)} refresh={refresh} priceLoading={priceLoading} lastFetch={lastFetch} prices={prices} onDelete={handleDeletePosition} />}
         {page === 'market' && <MarketPage openStock={openStock} gp={gp} prices={prices} />}
-        {page === 'projection' && <ProjPage p={proj} setP={setProj} />}
+        {page === 'projection' && <ProjPage p={proj} setP={setProj} tv={tv} ti={ti} />}
         {page === 'exposure' && <ExpoPage positions={positions} gp={gp} />}
         {page === 'stock' && selSym && <StockPage sym={selSym} gp={gp} goBack={() => setPage('dashboard')} prices={prices} positions={positions} />}
       </div>
@@ -233,75 +234,89 @@ function AuthPage({ mode, setMode, form, setForm, err, onSubmit }) {
 // ═══════════════════════════════════════════════════════════════
 function DashPage({ positions, gp, tv, ti, openStock, onAdd, refresh, priceLoading, lastFetch, prices, onDelete }) {
   const tg = tv - ti, tp = ti > 0 ? (tg / ti * 100) : 0
+  const btnStyle = { background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s' }
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-bold">Mon Portfolio</h2>
-        <div className="flex gap-2 items-center">
-          {lastFetch && <span className="text-[9px] text-slate-500">Màj: {lastFetch.toLocaleTimeString('fr-FR')}</span>}
-          <button onClick={refresh} disabled={priceLoading || !positions.length} className="px-3 py-1.5 rounded-md text-xs font-semibold" style={{ background: '#1e293b', border: '1px solid #334155', color: priceLoading ? '#64748b' : '#22d3ee' }}>
-            {priceLoading ? '↻ Chargement...' : '⟳ Actualiser (Yahoo)'}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>Mon Portfolio</h2>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {lastFetch && <span style={{ fontSize: 9, color: '#64748b' }}>Màj: {lastFetch.toLocaleTimeString('fr-FR')}</span>}
+          <button onClick={refresh} disabled={priceLoading || !positions.length} style={{ ...btnStyle, background: priceLoading ? '#1e293b' : 'linear-gradient(135deg,#22d3ee,#6366f1)', opacity: (!positions.length || priceLoading) ? 0.5 : 1, cursor: priceLoading ? 'default' : 'pointer' }}>
+            {priceLoading ? '↻ Chargement...' : '⟳ Actualiser les prix'}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        {[['Valeur', tv.toLocaleString('fr-FR',{maximumFractionDigits:2})+' €', '#22d3ee'],
-          ['Investi', ti.toLocaleString('fr-FR',{maximumFractionDigits:2})+' €', '#6366f1'],
-          ['+/- Value', (tg>=0?'+':'')+tg.toLocaleString('fr-FR',{maximumFractionDigits:2})+' €', tg>=0?'#10b981':'#ef4444'],
-          ['Positions', String(positions.length), '#f59e0b']].map(([l,v,c],i) => (
-          <div key={i} className="rounded-lg p-3 relative overflow-hidden" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-            <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: c }} />
-            <div className="text-[10px] text-slate-500 mb-1">{l}</div>
-            <div className="text-base font-bold font-mono" style={{ color: c }}>{v}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 16 }}>
+        {[['Valeur totale', tv.toLocaleString('fr-FR',{maximumFractionDigits:2})+' €', '#22d3ee'],
+          ['Capital investi', ti.toLocaleString('fr-FR',{maximumFractionDigits:2})+' €', '#6366f1'],
+          ['+/- Value', (tg>=0?'+':'')+tg.toLocaleString('fr-FR',{maximumFractionDigits:2})+' €', tg>=0?'#10b981':'#ef4444', (tp>=0?'+':'')+tp.toFixed(2)+'%'],
+          ['Positions', String(positions.length), '#f59e0b']].map(([l,v,c,sub],i) => (
+          <div key={i} style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 14, position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, background: c }} />
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>{l}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Space Mono', monospace", color: c }}>{v}</div>
+            {sub && <div style={{ fontSize: 11, color: c, marginTop: 2, fontWeight: 600 }}>{sub}</div>}
           </div>
         ))}
       </div>
 
-      <div className="rounded-lg overflow-hidden mb-4" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-        <div className="px-4 py-3 flex justify-between items-center" style={{ borderBottom: '1px solid #1e293b' }}>
-          <h3 className="text-sm font-semibold">Positions</h3>
-          <button onClick={onAdd} className="px-4 py-1.5 rounded-md text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#22d3ee,#6366f1)' }}>+ Ajouter</button>
+      <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b' }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Mes Positions</h3>
+          <button onClick={onAdd} style={btnStyle}>+ Ajouter une position</button>
         </div>
-        <table className="w-full">
-          <thead>
-            <tr style={{ background: '#0f1422' }}>
-              {['Titre','Qté','PRU','Cours','Valeur','+/-%',''].map(h => (
-                <th key={h} className="px-3 py-2 text-left text-[9px] font-semibold text-slate-500 uppercase">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {positions.map(pos => {
-              const sec = ALL_SECURITIES.find(s => s.symbol === pos.symbol)
-              const cur = gp(pos.symbol)
-              const gain = (cur - pos.buy_price) * pos.quantity
-              const pct = pos.buy_price > 0 ? ((cur - pos.buy_price) / pos.buy_price * 100) : 0
-              const live = prices[pos.symbol]?.price != null
-              return (
-                <tr key={pos.id} onClick={() => openStock(pos.symbol)} className="cursor-pointer hover:bg-slate-800/30 transition-colors" style={{ borderBottom: '1px solid #1e293b' }}>
-                  <td className="px-3 py-2.5">
-                    <div className="font-semibold text-xs">{pos.name}</div>
-                    <div className="text-[9px] text-slate-500 font-mono">{pos.symbol} {live && <span className="text-emerald-500">●</span>}</div>
-                  </td>
-                  <td className="px-3 py-2.5 font-mono text-xs">{pos.quantity}</td>
-                  <td className="px-3 py-2.5 font-mono text-xs">{Number(pos.buy_price).toFixed(2)}€</td>
-                  <td className="px-3 py-2.5 font-mono text-xs">{cur > 0 ? cur.toFixed(2) + '€' : '—'}</td>
-                  <td className="px-3 py-2.5 font-mono text-xs">{cur > 0 ? (cur * pos.quantity).toLocaleString('fr-FR',{maximumFractionDigits:2})+'€' : '—'}</td>
-                  <td className="px-3 py-2.5">
-                    {cur > 0 && <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono" style={{ background: gain >= 0 ? '#10b98118' : '#ef444418', color: gain >= 0 ? '#10b981' : '#ef4444' }}>
-                      {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
-                    </span>}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <button onClick={(e) => onDelete(pos.id, e)} className="text-[9px] text-red-300 px-1.5 py-0.5 rounded" style={{ background: '#7f1d1d18' }}>✕</button>
-                  </td>
-                </tr>
-              )
-            })}
-            {!positions.length && <tr><td colSpan={7} className="py-8 text-center text-slate-500 text-xs">Aucune position — cliquez "Ajouter"</td></tr>}
-          </tbody>
-        </table>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#0f1422' }}>
+                {['Titre','Qté','PRU','Cours','Valeur','% Portf.','+/-%',''].map(h => (
+                  <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 9, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map(pos => {
+                const sec = ALL_SECURITIES.find(s => s.symbol === pos.symbol)
+                const cur = gp(pos.symbol)
+                const val = cur * pos.quantity
+                const gain = (cur - pos.buy_price) * pos.quantity
+                const pct = pos.buy_price > 0 ? ((cur - pos.buy_price) / pos.buy_price * 100) : 0
+                const weight = tv > 0 ? (val / tv * 100) : 0
+                const live = prices[pos.symbol]?.price != null
+                return (
+                  <tr key={pos.id} onClick={() => openStock(pos.symbol)} style={{ borderBottom: '1px solid #1e293b', cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#1e293b30'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <td style={{ padding: '11px 12px' }}>
+                      <div style={{ fontWeight: 600, fontSize: 12, color: '#f1f5f9' }}>{pos.name}</div>
+                      <div style={{ fontSize: 9, color: '#64748b', fontFamily: "'Space Mono', monospace" }}>{pos.symbol} {live && <span style={{ color: '#10b981' }}>●</span>}</div>
+                    </td>
+                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{pos.quantity}</td>
+                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{Number(pos.buy_price).toFixed(2)}€</td>
+                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{cur > 0 ? cur.toFixed(2) + '€' : '—'}</td>
+                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{cur > 0 ? val.toLocaleString('fr-FR',{maximumFractionDigits:2})+'€' : '—'}</td>
+                    <td style={{ padding: '11px 12px' }}>
+                      {cur > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ width: 40, height: 4, background: '#1e293b', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: 4, background: '#22d3ee', borderRadius: 2, width: Math.min(weight, 100) + '%' }} />
+                        </div>
+                        <span style={{ fontSize: 10, fontFamily: "'Space Mono', monospace", fontWeight: 600, color: '#22d3ee' }}>{weight.toFixed(1)}%</span>
+                      </div>}
+                    </td>
+                    <td style={{ padding: '11px 12px' }}>
+                      {cur > 0 && <span style={{ background: gain >= 0 ? '#10b98118' : '#ef444418', color: gain >= 0 ? '#10b981' : '#ef4444', padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>
+                        {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+                      </span>}
+                    </td>
+                    <td style={{ padding: '11px 12px' }}>
+                      <button onClick={(e) => onDelete(pos.id, e)} style={{ background: '#7f1d1d18', border: '1px solid #991b1b30', color: '#fca5a5', padding: '3px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 9, fontFamily: 'inherit' }}>✕</button>
+                    </td>
+                  </tr>
+                )
+              })}
+              {!positions.length && <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#64748b', fontSize: 12 }}>Aucune position — cliquez "Ajouter une position"</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
@@ -458,41 +473,60 @@ function StockPage({ sym, gp, goBack, prices, positions }) {
 // ═══════════════════════════════════════════════════════════════
 // PROJECTIONS
 // ═══════════════════════════════════════════════════════════════
-function ProjPage({ p, setP }) {
+function ProjPage({ p, setP, tv, ti }) {
+  // Use actual portfolio value as initial if available
+  const effectiveInitial = tv > 0 ? tv : p.initial
   const data = useMemo(() => {
-    const r = []; let inv = p.initial, val = p.initial
+    const r = []; let inv = effectiveInitial, val = effectiveInitial
     for (let y = 0; y <= p.years; y++) { r.push({ y, inv: Math.round(inv), val: Math.round(val) }); val = val * (1 + p.rate / 100) + p.monthly * 12; inv += p.monthly * 12 }
     return r
-  }, [p])
+  }, [p, effectiveInitial])
   const fin = data[data.length - 1] || { val: 0, inv: 0 }
   const max = Math.max(...data.map(d => d.val))
+  const btnStyle = { background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }
 
   return (
     <div>
-      <h2 className="text-lg font-bold mb-4">Projection patrimoine</h2>
-      <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 240px' }}>
-        <div className="p-5 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-          <svg viewBox="0 0 700 250" className="w-full" style={{ height: 250 }}>
+      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>Projection de patrimoine</h2>
+      {tv > 0 && <p style={{ margin: '0 0 16px', fontSize: 12, color: '#94a3b8' }}>Basée sur votre portfolio actuel : <span style={{ color: '#22d3ee', fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>{tv.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</span></p>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 12 }}>
+        <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 20 }}>
+          <svg viewBox="0 0 700 250" style={{ width: '100%', height: 250 }}>
             <defs><linearGradient id="gv" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity="0.15"/><stop offset="100%" stopColor="#22d3ee" stopOpacity="0"/></linearGradient></defs>
             {[0,.25,.5,.75,1].map(pct => { const y=220-pct*190; return <g key={pct}><line x1="50" y1={y} x2="660" y2={y} stroke="#1e293b"/><text x="45" y={y+4} fill="#64748b" fontSize="8" textAnchor="end" fontFamily="Space Mono">{(max*pct/1000).toFixed(0)}k</text></g> })}
             <polygon points={"50,220 "+data.map(d=>(50+(d.y/p.years)*610)+","+(220-(d.val/max)*190)).join(" ")+" 660,220"} fill="url(#gv)"/>
             <polyline points={data.map(d=>(50+(d.y/p.years)*610)+","+(220-(d.val/max)*190)).join(" ")} fill="none" stroke="#22d3ee" strokeWidth="2.5"/>
             <polyline points={data.map(d=>(50+(d.y/p.years)*610)+","+(220-(d.inv/max)*190)).join(" ")} fill="none" stroke="#6366f1" strokeWidth="1.5" strokeDasharray="5,3"/>
           </svg>
-          <div className="grid grid-cols-3 gap-2 mt-3">
-            {[['Patrimoine',(fin.val/1000).toFixed(0)+'k €','#22d3ee'],['Investi',(fin.inv/1000).toFixed(0)+'k €','#6366f1'],['Gains',((fin.val-fin.inv)/1000).toFixed(0)+'k €','#10b981']].map(([l,v,c])=>(
-              <div key={l} className="p-3 rounded-md text-center" style={{ background: '#0a0e17' }}><div className="text-[9px] text-slate-500">{l}</div><div className="text-base font-bold font-mono" style={{color:c}}>{v}</div></div>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 8 }}>
+            <span style={{ fontSize: 10, color: '#22d3ee' }}>━━ Patrimoine</span>
+            <span style={{ fontSize: 10, color: '#6366f1' }}>┅┅ Capital investi</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginTop: 14 }}>
+            {[['Patrimoine final',(fin.val/1000).toFixed(0)+'k €','#22d3ee'],['Total investi',(fin.inv/1000).toFixed(0)+'k €','#6366f1'],['Plus-values',((fin.val-fin.inv)/1000).toFixed(0)+'k €','#10b981']].map(([l,v,c])=>(
+              <div key={l} style={{ background: '#0a0e17', borderRadius: 7, padding: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2 }}>{l}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: c, fontFamily: "'Space Mono', monospace" }}>{v}</div>
+              </div>
             ))}
           </div>
         </div>
-        <div className="p-4 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-          <h3 className="text-xs font-semibold mb-4">Paramètres</h3>
-          {[{k:'initial',l:'Capital initial',u:'€',min:0,max:100000,step:500},{k:'monthly',l:'Mensualité',u:'€',min:0,max:5000,step:50},{k:'years',l:'Durée',u:'ans',min:1,max:40,step:1},{k:'rate',l:'Rendement',u:'%',min:1,max:20,step:0.5}].map(s=>(
-            <div key={s.k} className="mb-4">
-              <div className="flex justify-between mb-1"><span className="text-[10px] text-slate-400">{s.l}</span><span className="font-mono text-xs font-bold text-cyan-400">{p[s.k]} {s.u}</span></div>
-              <input type="range" min={s.min} max={s.max} step={s.step} value={p[s.k]} onChange={e=>setP({...p,[s.k]:parseFloat(e.target.value)})} className="w-full accent-cyan-400"/>
+        <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
+          <h3 style={{ margin: '0 0 16px', fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Paramètres</h3>
+          {tv > 0 && <div style={{ background: '#22d3ee10', border: '1px solid #22d3ee30', borderRadius: 7, padding: '8px 10px', marginBottom: 14, fontSize: 10, color: '#22d3ee' }}>💡 Capital initial = valeur de votre portfolio</div>}
+          {[{k:'monthly',l:'Investissement mensuel',u:'€',min:0,max:5000,step:50},{k:'years',l:'Durée',u:'ans',min:1,max:40,step:1},{k:'rate',l:'Rendement annuel estimé',u:'%',min:1,max:20,step:0.5}].map(s=>(
+            <div key={s.k} style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>{s.l}</span>
+                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, color: '#22d3ee' }}>{p[s.k]} {s.u}</span>
+              </div>
+              <input type="range" min={s.min} max={s.max} step={s.step} value={p[s.k]} onChange={e=>setP({...p,[s.k]:parseFloat(e.target.value)})} style={{ width: '100%', accentColor: '#22d3ee' }}/>
             </div>
           ))}
+          <div style={{ background: '#0a0e17', borderRadius: 7, padding: 10, marginTop: 8 }}>
+            <div style={{ fontSize: 10, color: '#64748b' }}>💰 Les intérêts composés représentent</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#10b981', fontFamily: "'Space Mono', monospace" }}>{fin.val > 0 ? ((1-fin.inv/fin.val)*100).toFixed(0) : 0}% du patrimoine final</div>
+          </div>
         </div>
       </div>
     </div>
@@ -503,30 +537,87 @@ function ProjPage({ p, setP }) {
 // EXPOSURE
 // ═══════════════════════════════════════════════════════════════
 function ExpoPage({ positions, gp }) {
-  const build = (key) => {
-    const m = {}
-    positions.forEach(p => { const s = ALL_SECURITIES.find(x => x.symbol === p.symbol); if (s) m[s[key]] = (m[s[key]] || 0) + gp(p.symbol) * p.quantity })
-    const t = Object.values(m).reduce((a, b) => a + b, 0) || 1
-    return Object.entries(m).map(([k, v]) => ({ name: k, pct: v / t * 100 })).sort((a, b) => b.pct - a.pct)
-  }
-  const sD = useMemo(() => build('sector'), [positions, gp])
-  const rD = useMemo(() => build('region'), [positions, gp])
+  const TC = { 'Action': '#9B59B6', 'ETF': '#3498DB', 'Crypto': '#F39C12', 'Matière première': '#27AE60', 'Indice': '#E74C3C', 'OPCVM': '#1ABC9C', 'Devise': '#8E44AD' }
 
-  if (!positions.length) return <div><h2 className="text-lg font-bold mb-3">Exposition</h2><div className="p-8 text-center text-slate-500 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>Ajoutez des positions.</div></div>
+  const buildFromDb = (key) => {
+    const m = {}
+    positions.forEach(p => {
+      const s = ALL_SECURITIES.find(x => x.symbol === p.symbol)
+      const label = s ? s[key] : 'Autre'
+      m[label] = (m[label] || 0) + gp(p.symbol) * p.quantity
+    })
+    const t = Object.values(m).reduce((a, b) => a + b, 0) || 1
+    return Object.entries(m).map(([k, v]) => ({ name: k, val: v, pct: v / t * 100 })).sort((a, b) => b.pct - a.pct)
+  }
+
+  const buildType = () => {
+    const m = {}
+    positions.forEach(p => {
+      const s = ALL_SECURITIES.find(x => x.symbol === p.symbol)
+      // Detect type from symbol or DB
+      let type = s ? s.type : 'Autre'
+      const sym = p.symbol.toUpperCase()
+      if (sym.includes('-USD') || sym.includes('-EUR') || sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL') || sym.includes('ADA') || sym.includes('XRP')) type = 'Crypto'
+      else if (sym.includes('GC=F') || sym.includes('SI=F') || sym.includes('CL=F') || sym.includes('NG=F')) type = 'Matière première'
+      m[type] = (m[type] || 0) + gp(p.symbol) * p.quantity
+    })
+    const t = Object.values(m).reduce((a, b) => a + b, 0) || 1
+    return Object.entries(m).map(([k, v]) => ({ name: k, val: v, pct: v / t * 100 })).sort((a, b) => b.pct - a.pct)
+  }
+
+  const sD = useMemo(() => buildFromDb('sector'), [positions, gp])
+  const rD = useMemo(() => buildFromDb('region'), [positions, gp])
+  const tD = useMemo(() => buildType(), [positions, gp])
+  const totalVal = positions.reduce((s, p) => s + gp(p.symbol) * p.quantity, 0)
+  const maxC = Math.max(...sD.map(d => d.pct), ...rD.map(d => d.pct), 0)
+
+  if (!positions.length) return (
+    <div>
+      <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>Exposition du portfolio</h2>
+      <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 36, textAlign: 'center', color: '#64748b' }}>Ajoutez des positions pour analyser votre exposition.</div>
+    </div>
+  )
 
   const Bars = ({ data, colors }) => data.map((d, i) => (
-    <div key={i} className="mb-1.5">
-      <div className="flex justify-between mb-0.5"><div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm" style={{ background: colors[d.name] || '#64748b' }} /><span className="text-[10px]">{d.name}</span></div><span className="text-[10px] font-mono font-semibold">{d.pct.toFixed(1)}%</span></div>
-      <div className="h-1 rounded" style={{ background: '#1e293b' }}><div className="h-1 rounded" style={{ background: colors[d.name] || '#64748b', width: d.pct + '%' }} /></div>
+    <div key={i} style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 2, background: colors[d.name] || '#64748b' }} />
+          <span style={{ fontSize: 11, color: '#e2e8f0' }}>{d.name}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: '#64748b', fontFamily: "'Space Mono', monospace" }}>{d.val.toLocaleString('fr-FR',{maximumFractionDigits:0})}€</span>
+          <span style={{ fontSize: 11, fontFamily: "'Space Mono', monospace", fontWeight: 700, color: colors[d.name] || '#64748b' }}>{d.pct.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div style={{ height: 5, background: '#1e293b', borderRadius: 3 }}>
+        <div style={{ height: 5, background: colors[d.name] || '#64748b', borderRadius: 3, width: d.pct + '%', transition: 'width 0.3s' }} />
+      </div>
     </div>
   ))
 
   return (
     <div>
-      <h2 className="text-lg font-bold mb-3">Exposition</h2>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}><h3 className="text-xs font-semibold mb-3">Sectorielle</h3><Bars data={sD} colors={SC} /></div>
-        <div className="p-4 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}><h3 className="text-xs font-semibold mb-3">Géographique</h3><Bars data={rD} colors={RC} /></div>
+      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>Exposition du portfolio</h2>
+      <p style={{ margin: '0 0 14px', fontSize: 12, color: '#94a3b8' }}>Valeur totale : <span style={{ color: '#22d3ee', fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>{totalVal.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</span> — {positions.length} position{positions.length > 1 ? 's' : ''}</p>
+
+      {/* Diversification indicator */}
+      <div style={{ background: maxC > 50 ? '#7f1d1d16' : maxC > 30 ? '#78350f16' : '#05291916', borderRadius: 8, border: '1px solid ' + (maxC > 50 ? '#991b1b30' : maxC > 30 ? '#92400e30' : '#065f4630'), padding: 12, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 20 }}>{maxC > 50 ? '⚠️' : maxC > 30 ? '⚡' : '✅'}</span>
+        <div>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>Diversification : </span>
+          <span style={{ fontWeight: 700, color: maxC > 50 ? '#ef4444' : maxC > 30 ? '#f59e0b' : '#10b981' }}>{maxC > 50 ? 'Faible' : maxC > 30 ? 'Modérée' : 'Bonne'}</span>
+          <span style={{ fontSize: 11, color: '#64748b', marginLeft: 8 }}>Concentration max : {maxC.toFixed(1)}%</span>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        {[['🏢 Par secteur', sD, SC], ['🌍 Par région', rD, RC], ['📦 Par type d\'actif', tD, TC]].map(([title, data, colors]) => (
+          <div key={title} style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 18 }}>
+            <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>{title}</h3>
+            <Bars data={data} colors={colors} />
+          </div>
+        ))}
       </div>
     </div>
   )
