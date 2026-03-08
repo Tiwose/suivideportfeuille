@@ -234,14 +234,58 @@ function AuthPage({ mode, setMode, form, setForm, err, onSubmit }) {
 // ═══════════════════════════════════════════════════════════════
 function DashPage({ positions, gp, tv, ti, openStock, onAdd, refresh, priceLoading, lastFetch, prices, onDelete }) {
   const tg = tv - ti, tp = ti > 0 ? (tg / ti * 100) : 0
-  const btnStyle = { background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s' }
+  const [sortKey, setSortKey] = useState('weight')
+  const [sortDir, setSortDir] = useState('desc')
+  const [news, setNews] = useState([])
+  const [newsLoading, setNewsLoading] = useState(false)
+
+  // Fetch news for portfolio
+  useEffect(() => {
+    if (!positions.length) return
+    setNewsLoading(true)
+    const syms = positions.map(p => p.symbol).slice(0, 8).join(',')
+    fetch('/api/news?symbols=' + syms + '&general=true')
+      .then(r => r.json())
+      .then(d => setNews(d.news || []))
+      .catch(() => {})
+      .finally(() => setNewsLoading(false))
+  }, [positions])
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('desc') }
+  }
+
+  const sorted = useMemo(() => {
+    return [...positions].sort((a, b) => {
+      let va, vb
+      const curA = gp(a.symbol), curB = gp(b.symbol)
+      switch (sortKey) {
+        case 'name': va = a.name.toLowerCase(); vb = b.name.toLowerCase(); break
+        case 'qty': va = a.quantity; vb = b.quantity; break
+        case 'pru': va = Number(a.buy_price); vb = Number(b.buy_price); break
+        case 'price': va = curA; vb = curB; break
+        case 'value': va = curA * a.quantity; vb = curB * b.quantity; break
+        case 'weight': va = tv > 0 ? (curA * a.quantity / tv) : 0; vb = tv > 0 ? (curB * b.quantity / tv) : 0; break
+        case 'perf': va = a.buy_price > 0 ? ((curA - a.buy_price) / a.buy_price) : 0; vb = b.buy_price > 0 ? ((curB - b.buy_price) / b.buy_price) : 0; break
+        default: va = 0; vb = 0
+      }
+      if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
+      return sortDir === 'asc' ? va - vb : vb - va
+    })
+  }, [positions, sortKey, sortDir, gp, tv])
+
+  const btnStyle = { background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }
+  const thStyle = (key) => ({ padding: '10px 12px', textAlign: 'left', fontSize: 9, fontWeight: 600, color: sortKey === key ? '#22d3ee' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', cursor: 'pointer', userSelect: 'none' })
+  const arrow = (key) => sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>Mon Portfolio</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {lastFetch && <span style={{ fontSize: 9, color: '#64748b' }}>Màj: {lastFetch.toLocaleTimeString('fr-FR')}</span>}
-          <button onClick={refresh} disabled={priceLoading || !positions.length} style={{ ...btnStyle, background: priceLoading ? '#1e293b' : 'linear-gradient(135deg,#22d3ee,#6366f1)', opacity: (!positions.length || priceLoading) ? 0.5 : 1, cursor: priceLoading ? 'default' : 'pointer' }}>
+          <button onClick={refresh} disabled={priceLoading || !positions.length} style={{ ...btnStyle, opacity: priceLoading ? 0.5 : 1 }}>
             {priceLoading ? '↻ Chargement...' : '⟳ Actualiser les prix'}
           </button>
         </div>
@@ -261,61 +305,68 @@ function DashPage({ positions, gp, tv, ti, openStock, onAdd, refresh, priceLoadi
         ))}
       </div>
 
-      <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', overflow: 'hidden', marginBottom: 16 }}>
-        <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b' }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Mes Positions</h3>
-          <button onClick={onAdd} style={btnStyle}>+ Ajouter une position</button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 12, marginBottom: 16 }}>
+        {/* Positions table */}
+        <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b' }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Mes Positions</h3>
+            <button onClick={onAdd} style={btnStyle}>+ Ajouter</button>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#0f1422' }}>
+                  <th onClick={() => toggleSort('name')} style={thStyle('name')}>Titre{arrow('name')}</th>
+                  <th onClick={() => toggleSort('qty')} style={thStyle('qty')}>Qté{arrow('qty')}</th>
+                  <th onClick={() => toggleSort('pru')} style={thStyle('pru')}>PRU{arrow('pru')}</th>
+                  <th onClick={() => toggleSort('price')} style={thStyle('price')}>Cours{arrow('price')}</th>
+                  <th onClick={() => toggleSort('value')} style={thStyle('value')}>Valeur{arrow('value')}</th>
+                  <th onClick={() => toggleSort('weight')} style={thStyle('weight')}>% Portf.{arrow('weight')}</th>
+                  <th onClick={() => toggleSort('perf')} style={thStyle('perf')}>+/-%{arrow('perf')}</th>
+                  <th style={{ padding: '10px 12px', width: 30 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(pos => {
+                  const cur = gp(pos.symbol), val = cur * pos.quantity
+                  const gain = (cur - pos.buy_price) * pos.quantity
+                  const pct = pos.buy_price > 0 ? ((cur - pos.buy_price) / pos.buy_price * 100) : 0
+                  const weight = tv > 0 ? (val / tv * 100) : 0
+                  const live = prices[pos.symbol]?.price != null
+                  return (
+                    <tr key={pos.id} onClick={() => openStock(pos.symbol)} style={{ borderBottom: '1px solid #1e293b', cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#1e293b30'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                      <td style={{ padding: '10px 12px' }}><div style={{ fontWeight: 600, fontSize: 12, color: '#f1f5f9' }}>{pos.name}</div><div style={{ fontSize: 9, color: '#64748b', fontFamily: "'Space Mono', monospace" }}>{pos.symbol} {live && <span style={{ color: '#10b981' }}>●</span>}</div></td>
+                      <td style={{ padding: '10px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{pos.quantity}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{Number(pos.buy_price).toFixed(2)}€</td>
+                      <td style={{ padding: '10px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{cur > 0 ? cur.toFixed(2)+'€' : '—'}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{cur > 0 ? val.toLocaleString('fr-FR',{maximumFractionDigits:0})+'€' : '—'}</td>
+                      <td style={{ padding: '10px 12px' }}>{cur > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 36, height: 4, background: '#1e293b', borderRadius: 2 }}><div style={{ height: 4, background: '#22d3ee', borderRadius: 2, width: Math.min(weight,100)+'%' }}/></div><span style={{ fontSize: 10, fontFamily: "'Space Mono', monospace", fontWeight: 600, color: '#22d3ee' }}>{weight.toFixed(1)}%</span></div>}</td>
+                      <td style={{ padding: '10px 12px' }}>{cur > 0 && <span style={{ background: gain>=0?'#10b98118':'#ef444418', color: gain>=0?'#10b981':'#ef4444', padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>{pct>=0?'+':''}{pct.toFixed(2)}%</span>}</td>
+                      <td style={{ padding: '10px 12px' }}><button onClick={(e) => onDelete(pos.id, e)} style={{ background: '#7f1d1d18', border: '1px solid #991b1b30', color: '#fca5a5', padding: '3px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 9 }}>✕</button></td>
+                    </tr>
+                  )
+                })}
+                {!positions.length && <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#64748b', fontSize: 12 }}>Aucune position</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#0f1422' }}>
-                {['Titre','Qté','PRU','Cours','Valeur','% Portf.','+/-%',''].map(h => (
-                  <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 9, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map(pos => {
-                const sec = ALL_SECURITIES.find(s => s.symbol === pos.symbol)
-                const cur = gp(pos.symbol)
-                const val = cur * pos.quantity
-                const gain = (cur - pos.buy_price) * pos.quantity
-                const pct = pos.buy_price > 0 ? ((cur - pos.buy_price) / pos.buy_price * 100) : 0
-                const weight = tv > 0 ? (val / tv * 100) : 0
-                const live = prices[pos.symbol]?.price != null
-                return (
-                  <tr key={pos.id} onClick={() => openStock(pos.symbol)} style={{ borderBottom: '1px solid #1e293b', cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background='#1e293b30'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                    <td style={{ padding: '11px 12px' }}>
-                      <div style={{ fontWeight: 600, fontSize: 12, color: '#f1f5f9' }}>{pos.name}</div>
-                      <div style={{ fontSize: 9, color: '#64748b', fontFamily: "'Space Mono', monospace" }}>{pos.symbol} {live && <span style={{ color: '#10b981' }}>●</span>}</div>
-                    </td>
-                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{pos.quantity}</td>
-                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{Number(pos.buy_price).toFixed(2)}€</td>
-                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{cur > 0 ? cur.toFixed(2) + '€' : '—'}</td>
-                    <td style={{ padding: '11px 12px', fontFamily: "'Space Mono', monospace", fontSize: 11, color: '#e2e8f0' }}>{cur > 0 ? val.toLocaleString('fr-FR',{maximumFractionDigits:2})+'€' : '—'}</td>
-                    <td style={{ padding: '11px 12px' }}>
-                      {cur > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <div style={{ width: 40, height: 4, background: '#1e293b', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ height: 4, background: '#22d3ee', borderRadius: 2, width: Math.min(weight, 100) + '%' }} />
-                        </div>
-                        <span style={{ fontSize: 10, fontFamily: "'Space Mono', monospace", fontWeight: 600, color: '#22d3ee' }}>{weight.toFixed(1)}%</span>
-                      </div>}
-                    </td>
-                    <td style={{ padding: '11px 12px' }}>
-                      {cur > 0 && <span style={{ background: gain >= 0 ? '#10b98118' : '#ef444418', color: gain >= 0 ? '#10b981' : '#ef4444', padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>
-                        {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
-                      </span>}
-                    </td>
-                    <td style={{ padding: '11px 12px' }}>
-                      <button onClick={(e) => onDelete(pos.id, e)} style={{ background: '#7f1d1d18', border: '1px solid #991b1b30', color: '#fca5a5', padding: '3px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 9, fontFamily: 'inherit' }}>✕</button>
-                    </td>
-                  </tr>
-                )
-              })}
-              {!positions.length && <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#64748b', fontSize: 12 }}>Aucune position — cliquez "Ajouter une position"</td></tr>}
-            </tbody>
-          </table>
+
+        {/* News sidebar */}
+        <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16, maxHeight: 600, overflowY: 'auto' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>📰 Actualités de vos actifs</h3>
+          {newsLoading && <div style={{ fontSize: 11, color: '#64748b', padding: 8 }}>Chargement des actualités...</div>}
+          {news.length === 0 && !newsLoading && <div style={{ fontSize: 11, color: '#64748b', padding: 8 }}>Aucune actualité disponible</div>}
+          {news.map((n, i) => (
+            <a key={i} href={n.link} target="_blank" rel="noopener noreferrer" style={{ display: 'block', padding: '10px 8px', background: '#0a0e17', borderRadius: 7, marginBottom: 6, textDecoration: 'none', transition: 'all 0.15s' }} onMouseEnter={e => e.currentTarget.style.borderColor='#22d3ee40'} onMouseLeave={e => e.currentTarget.style.borderColor='transparent'}>
+              <div style={{ fontSize: 11, color: '#f1f5f9', lineHeight: 1.4, marginBottom: 4 }}>{n.title}</div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 9, color: '#64748b' }}>{n.publisher}</span>
+                {n.publishedAt && <span style={{ fontSize: 9, color: '#64748b' }}>{new Date(n.publishedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</span>}
+                {n.relatedSymbol && <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: '#22d3ee15', color: '#22d3ee' }}>{n.relatedSymbol}</span>}
+              </div>
+            </a>
+          ))}
         </div>
       </div>
     </div>
@@ -328,34 +379,83 @@ function DashPage({ positions, gp, tv, ti, openStock, onAdd, refresh, priceLoadi
 function MarketPage({ openStock, gp, prices }) {
   const [search, setSearch] = useState('')
   const [typeF, setTypeF] = useState('all')
-  const filtered = useMemo(() => ALL_SECURITIES.filter(s => {
+  const [mode, setMode] = useState('local')
+  const [yahooResults, setYahooResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const searchTimeout = useRef(null)
+
+  const localFiltered = useMemo(() => ALL_SECURITIES.filter(s => {
     const q = search.toLowerCase()
     return (!q || s.name.toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q)) && (typeF === 'all' || s.type === typeF)
   }), [search, typeF])
 
+  const searchYahoo = async (q) => {
+    if (!q || q.length < 2) { setYahooResults([]); return }
+    setSearching(true)
+    try {
+      const res = await fetch('/api/search?q=' + encodeURIComponent(q))
+      const data = await res.json()
+      setYahooResults(data.results || [])
+    } catch (e) { setYahooResults([]) }
+    finally { setSearching(false) }
+  }
+
+  const handleSearch = (val) => {
+    setSearch(val)
+    if (mode === 'yahoo') {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current)
+      searchTimeout.current = setTimeout(() => searchYahoo(val), 400)
+    }
+  }
+
+  const results = mode === 'local' ? localFiltered : yahooResults
+  const typeColors = { 'Action': '#9B59B6', 'ETF': '#3498DB', 'Crypto': '#F39C12', 'Matière première': '#27AE60', 'Indice': '#E74C3C', 'OPCVM': '#1ABC9C' }
+  const inputStyle = { padding: '9px 12px', background: '#0a0e17', border: '1px solid #1e293b', borderRadius: 7, color: '#f1f5f9', fontSize: 12, fontFamily: 'inherit', outline: 'none' }
+
   return (
     <div>
-      <h2 className="text-lg font-bold mb-3">Marché PEA — {ALL_SECURITIES.length} titres</h2>
-      <div className="flex gap-2 mb-3">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher (LVMH, CW8, Schneider...)" className="flex-1 px-3 py-2 rounded-md text-xs outline-none" style={{ background: '#111827', border: '1px solid #1e293b', color: '#f1f5f9' }} />
-        <select value={typeF} onChange={e => setTypeF(e.target.value)} className="px-2 py-1.5 rounded-md text-xs" style={{ background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9' }}>
-          <option value="all">Tous</option>
-          <option value="Action">Actions</option>
-          <option value="ETF">ETFs</option>
-        </select>
+      <h2 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>Explorer le marché</h2>
+
+      <div style={{ display: 'flex', gap: 4, background: '#111827', borderRadius: 8, padding: 3, marginBottom: 12, maxWidth: 400 }}>
+        <button onClick={() => { setMode('local'); setYahooResults([]) }} style={{ flex: 1, padding: 8, border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 11, fontFamily: 'inherit', background: mode === 'local' ? '#1e293b' : 'transparent', color: mode === 'local' ? '#22d3ee' : '#94a3b8' }}>
+          📋 Base PEA ({ALL_SECURITIES.length})
+        </button>
+        <button onClick={() => setMode('yahoo')} style={{ flex: 1, padding: 8, border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 11, fontFamily: 'inherit', background: mode === 'yahoo' ? '#1e293b' : 'transparent', color: mode === 'yahoo' ? '#f59e0b' : '#94a3b8' }}>
+          🌍 Yahoo Finance
+        </button>
       </div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))' }}>
-        {filtered.slice(0, 80).map(sec => {
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => handleSearch(e.target.value)} placeholder={mode === 'local' ? "Rechercher dans la base PEA..." : "iShares, Bitcoin, Tesla, Gold, Nasdaq..."} style={{ ...inputStyle, flex: 1, minWidth: 250 }} />
+        {mode === 'local' && (
+          <select value={typeF} onChange={e => setTypeF(e.target.value)} style={{ ...inputStyle, fontSize: 11 }}>
+            <option value="all">Tous</option><option value="Action">Actions</option><option value="ETF">ETFs</option>
+          </select>
+        )}
+        <span style={{ fontSize: 10, color: '#64748b', alignSelf: 'center' }}>{results.length} résultats</span>
+      </div>
+
+      {searching && <div style={{ padding: 12, textAlign: 'center', color: '#22d3ee', fontSize: 12 }}>Recherche sur Yahoo Finance...</div>}
+      {mode === 'yahoo' && search.length < 2 && !searching && <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 12 }}>Tapez au moins 2 caractères pour chercher</div>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 8 }}>
+        {results.slice(0, 60).map(sec => {
           const p = prices[sec.symbol]
+          const tc = typeColors[sec.type] || '#64748b'
           return (
-            <div key={sec.symbol} onClick={() => openStock(sec.symbol)} className="p-3 rounded-lg cursor-pointer hover:border-cyan-500/30 transition-all" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-              <div className="font-bold text-xs">{sec.name}</div>
-              <div className="text-[9px] text-slate-500 font-mono mb-1">{sec.symbol}</div>
-              <div className="flex justify-between items-end">
-                <div className="font-mono text-sm font-bold">{p?.price ? p.price.toFixed(2) + '€' : '—'}</div>
-                <div className="text-right">
-                  <span className="text-[8px] px-1.5 py-0.5 rounded font-semibold" style={{ background: (SC[sec.sector]||'#64748b')+'16', color: SC[sec.sector] }}>{sec.sector}</span>
-                  <div className="text-[8px] text-slate-500 mt-0.5">{sec.region} • {sec.type}</div>
+            <div key={sec.symbol} onClick={() => openStock(sec.symbol)} style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 14, cursor: 'pointer', transition: 'all 0.15s' }} onMouseEnter={e=>{e.currentTarget.style.borderColor='#22d3ee40';e.currentTarget.style.transform='translateY(-1px)'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#1e293b';e.currentTarget.style.transform='none'}}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sec.name}</div>
+                  <div style={{ fontSize: 9, color: '#64748b', fontFamily: "'Space Mono', monospace" }}>{sec.symbol}</div>
+                </div>
+                <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: tc + '18', color: tc, fontWeight: 600, flexShrink: 0, marginLeft: 6 }}>{sec.type}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 15, fontWeight: 700, color: '#f1f5f9' }}>{p?.price ? p.price.toFixed(2)+'€' : '—'}</div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: 8, padding: '2px 5px', borderRadius: 3, background: (SC[sec.sector]||'#64748b')+'15', color: SC[sec.sector]||'#64748b', fontWeight: 600 }}>{sec.sector}</span>
+                  <div style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>{sec.region} {sec.exchange ? '• '+sec.exchange : ''}</div>
                 </div>
               </div>
             </div>
@@ -373,6 +473,9 @@ function StockPage({ sym, gp, goBack, prices, positions }) {
   const sec = ALL_SECURITIES.find(s => s.symbol === sym)
   const [det, setDet] = useState(null)
   const [ld, setLd] = useState(false)
+  const [analysis, setAnalysis] = useState(null)
+  const [analysisLd, setAnalysisLd] = useState(false)
+  const [analysisErr, setAnalysisErr] = useState('')
   const pos = positions.find(p => p.symbol === sym)
 
   const load = async () => {
@@ -383,87 +486,99 @@ function StockPage({ sym, gp, goBack, prices, positions }) {
     setLd(false)
   }
 
+  const loadAnalysis = async () => {
+    setAnalysisLd(true); setAnalysisErr('')
+    try {
+      const res = await fetch('/api/analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: sym, name: det?.name || sec?.name || sym })
+      })
+      const data = await res.json()
+      if (data.error) setAnalysisErr(data.error)
+      else setAnalysis(data.analysis)
+    } catch (e) { setAnalysisErr('Erreur de connexion') }
+    finally { setAnalysisLd(false) }
+  }
+
   useEffect(() => { load() }, [sym])
 
   const price = det?.price || gp(sym)
-
-  if (!sec) return <div><button onClick={goBack}>← Retour</button><p>Introuvable</p></div>
+  const stockName = det?.name || sec?.name || sym
+  const btnStyle = { background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }
+  const kv = (l, v, c) => (
+    <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+      <span style={{ fontSize: 10, color: '#64748b' }}>{l}</span>
+      <span style={{ fontSize: 10, fontFamily: "'Space Mono', monospace", fontWeight: 600, color: c }}>{v}</span>
+    </div>
+  )
 
   return (
     <div>
-      <button onClick={goBack} className="text-xs text-slate-500 mb-3 hover:text-white transition-colors">← Retour</button>
-      <div className="flex justify-between items-start mb-4">
+      <button onClick={goBack} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', marginBottom: 10 }}>← Retour</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <h1 className="text-2xl font-bold mb-1">{sec.name}</h1>
-          <div className="flex gap-2 items-center">
-            <span className="font-mono text-xs text-slate-500">{sym}</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: (SC[sec.sector]||'#64748b')+'18', color: SC[sec.sector] }}>{sec.sector}</span>
-            <span className="text-[9px] text-slate-500">{sec.region}</span>
+          <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 700, color: '#f1f5f9' }}>{stockName}</h1>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontFamily: "'Space Mono', monospace", color: '#64748b', fontSize: 11 }}>{sym}</span>
+            {sec && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: (SC[sec.sector]||'#64748b')+'18', color: SC[sec.sector] }}>{sec.sector}</span>}
           </div>
         </div>
-        <div className="text-right">
-          <div className="font-mono text-2xl font-bold">{price > 0 ? price.toFixed(2) + ' €' : '—'}</div>
-          {det?.changePct != null && (
-            <div className="text-xs font-mono font-semibold" style={{ color: det.changePct >= 0 ? '#10b981' : '#ef4444' }}>
-              {det.changePct >= 0 ? '▲' : '▼'} {Math.abs(det.changePct).toFixed(2)}%
-            </div>
-          )}
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 26, fontWeight: 700, color: '#f1f5f9' }}>{price > 0 ? price.toFixed(2)+' €' : '—'}</div>
+          {det?.changePct != null && <div style={{ color: det.changePct>=0?'#10b981':'#ef4444', fontSize: 12, fontFamily: "'Space Mono', monospace", fontWeight: 600 }}>{det.changePct>=0?'▲':'▼'} {Math.abs(det.changePct).toFixed(2)}%</div>}
         </div>
       </div>
 
-      {ld && <div className="text-xs text-slate-500 mb-3">Chargement des données Yahoo Finance...</div>}
+      {ld && <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>Chargement des données...</div>}
 
       {det ? (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="p-4 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-            <h3 className="text-[11px] uppercase text-slate-400 font-semibold mb-2">Données Clés</h3>
-            {[['Prix', price.toFixed(2)+' €', '#22d3ee'],
-              det.per && ['PER', String(Number(det.per).toFixed(1)), det.per<15?'#10b981':det.per<25?'#f59e0b':'#ef4444'],
-              det.eps && ['BPA', det.eps+' €', '#22d3ee'],
-              det.marketCap && ['Cap.', (det.marketCap/1e9).toFixed(1)+' Md€', '#94a3b8'],
-              det.beta && ['Bêta', String(Number(det.beta).toFixed(2)), '#94a3b8'],
-              det.high52 && ['+Haut 52s', det.high52+' €', '#10b981'],
-              det.low52 && ['+Bas 52s', det.low52+' €', '#ef4444']
-            ].filter(Boolean).map(([l,v,c]) => (
-              <div key={l} className="flex justify-between py-1"><span className="text-[10px] text-slate-500">{l}</span><span className="text-[10px] font-mono font-semibold" style={{color:c}}>{v}</span></div>
-            ))}
-          </div>
-          <div className="p-4 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-            <h3 className="text-[11px] uppercase text-slate-400 font-semibold mb-2">Dividendes & Consensus</h3>
-            {det.dividend ? (
-              <div>
-                {[['Dividende', det.dividend+' €', '#22d3ee'],
-                  det.dividendYield && ['Rendement', det.dividendYield+'%', '#10b981'],
-                  det.exDividendDate && ['Ex-div', det.exDividendDate, '#f1f5f9']
-                ].filter(Boolean).map(([l,v,c]) => (
-                  <div key={l} className="flex justify-between py-1"><span className="text-[10px] text-slate-500">{l}</span><span className="text-[10px] font-mono font-semibold" style={{color:c}}>{v}</span></div>
-                ))}
-              </div>
-            ) : <div className="text-[10px] text-slate-500">Pas de dividende</div>}
-            <div className="mt-3 pt-3 text-center" style={{ borderTop: '1px solid #1e293b' }}>
-              {det.consensus ? (
-                <div>
-                  <div className="text-lg font-bold" style={{ color: String(det.consensus).includes('Achat')?'#10b981':det.consensus==='Neutre'?'#f59e0b':'#ef4444' }}>{det.consensus}</div>
-                  {det.targetPrice && <div className="text-[10px] text-slate-500 mt-1">Objectif: <span className="text-cyan-400 font-bold">{det.targetPrice} €</span></div>}
-                  {det.analystCount && <div className="text-[9px] text-slate-600">{det.analystCount} analystes</div>}
-                </div>
-              ) : <div className="text-[10px] text-slate-500">Consensus indisponible</div>}
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Données Clés</h3>
+              {[['Prix', price.toFixed(2)+' €', '#22d3ee'], det.per&&['PER',Number(det.per).toFixed(1),det.per<15?'#10b981':det.per<25?'#f59e0b':'#ef4444'], det.eps&&['BPA',det.eps+' €','#22d3ee'], det.marketCap&&['Cap.',(det.marketCap/1e9).toFixed(1)+' Md€','#94a3b8'], det.beta&&['Bêta',Number(det.beta).toFixed(2),'#94a3b8'], det.high52&&['+Haut 52s',det.high52+' €','#10b981'], det.low52&&['+Bas 52s',det.low52+' €','#ef4444']].filter(Boolean).map(([l,v,c])=>kv(l,v,c))}
+            </div>
+            <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Dividendes & Consensus</h3>
+              {det.dividend ? [['Dividende',det.dividend+' €','#22d3ee'], det.dividendYield&&['Rendement',det.dividendYield+'%','#10b981'], det.exDividendDate&&['Ex-div',det.exDividendDate,'#f1f5f9']].filter(Boolean).map(([l,v,c])=>kv(l,v,c)) : <div style={{ fontSize: 10, color: '#64748b' }}>Pas de dividende</div>}
+              {det.consensus && <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #1e293b', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: String(det.consensus).includes('Achat')?'#10b981':det.consensus==='Neutre'?'#f59e0b':'#ef4444' }}>{det.consensus}</div>
+                {det.targetPrice && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Objectif: <span style={{ color: '#22d3ee', fontWeight: 700 }}>{det.targetPrice} €</span></div>}
+              </div>}
+            </div>
+            <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Technique</h3>
+              {det.support && kv('Support', det.support+' €', '#10b981')}
+              {det.resistance && kv('Résistance', det.resistance+' €', '#ef4444')}
+              {det.avg50 && kv('MM50', Number(det.avg50).toFixed(2)+' €', '#94a3b8')}
+              {det.avg200 && kv('MM200', Number(det.avg200).toFixed(2)+' €', '#94a3b8')}
+              {det.nextEarnings && kv('Résultats', det.nextEarnings, '#f1f5f9')}
             </div>
           </div>
-          <div className="p-4 rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-            <h3 className="text-[11px] uppercase text-slate-400 font-semibold mb-2">Technique</h3>
-            {det.support && <div className="flex justify-between py-1"><span className="text-[10px] text-emerald-500">Support</span><span className="text-[10px] font-mono font-bold text-emerald-500">{det.support} €</span></div>}
-            {det.resistance && <div className="flex justify-between py-1"><span className="text-[10px] text-red-400">Résistance</span><span className="text-[10px] font-mono font-bold text-red-400">{det.resistance} €</span></div>}
-            {det.avg50 && <div className="flex justify-between py-1"><span className="text-[10px] text-slate-500">MM50</span><span className="text-[10px] font-mono font-semibold">{Number(det.avg50).toFixed(2)} €</span></div>}
-            {det.avg200 && <div className="flex justify-between py-1"><span className="text-[10px] text-slate-500">MM200</span><span className="text-[10px] font-mono font-semibold">{Number(det.avg200).toFixed(2)} €</span></div>}
-            {det.nextEarnings && <div className="flex justify-between py-1"><span className="text-[10px] text-slate-500">Résultats</span><span className="text-[10px] font-semibold">{det.nextEarnings}</span></div>}
-            <div className="mt-2 text-[10px] text-emerald-500 font-semibold">Éligible PEA ✓</div>
+
+          {/* GS Analysis section */}
+          <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 18, marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>🏦 Analyse Fondamentale</h3>
+              <button onClick={loadAnalysis} disabled={analysisLd} style={{ ...btnStyle, background: analysisLd ? '#1e293b' : 'linear-gradient(135deg,#f59e0b,#ef4444)', opacity: analysisLd ? 0.5 : 1 }}>
+                {analysisLd ? '↻ Analyse en cours...' : analysis ? '🔄 Relancer l\'analyse' : '📊 Lancer l\'analyse GS'}
+              </button>
+            </div>
+            {analysisErr && <div style={{ background: '#7f1d1d18', border: '1px solid #991b1b30', borderRadius: 7, padding: '8px 12px', color: '#fca5a5', fontSize: 11, marginBottom: 8 }}>{analysisErr}</div>}
+            {analysisLd && <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 12 }}>L'analyse prend 15-30 secondes... L'IA recherche et compile les données en temps réel.</div>}
+            {analysis && (
+              <div style={{ background: '#0a0e17', borderRadius: 8, padding: 16, maxHeight: 500, overflowY: 'auto', fontSize: 12, color: '#e2e8f0', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                {analysis}
+              </div>
+            )}
+            {!analysis && !analysisLd && !analysisErr && <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', padding: 10 }}>Cliquez pour obtenir une analyse détaillée style Goldman Sachs avec notation, valorisation, scénarios haussier/baissier et verdict.</div>}
           </div>
         </div>
       ) : !ld && (
-        <div className="p-8 text-center rounded-lg" style={{ background: '#111827', border: '1px solid #1e293b' }}>
-          <div className="text-3xl mb-2">📈</div>
-          <button onClick={load} className="px-4 py-2 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg,#22d3ee,#6366f1)' }}>Charger les données</button>
+        <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 36, textAlign: 'center' }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
+          <button onClick={load} style={btnStyle}>Charger les données</button>
         </div>
       )}
     </div>
