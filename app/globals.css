@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0e17;
+  --card: #111827;
+  --border: #1e293b;
+  --accent: #22d3ee;
+  --purple: #6366f1;
+}
+
+body {
+  background: var(--bg);
+  color: #e2e8f0;
+  font-family: 'DM Sans', 'Segoe UI', sans-serif;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
