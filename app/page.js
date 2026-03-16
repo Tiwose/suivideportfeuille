@@ -44,6 +44,7 @@ export default function Home() {
   const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' })
   const [authErr, setAuthErr] = useState('')
   const [proj, setProj] = useState({ initial: 10000, monthly: 500, years: 20, rate: 8 })
+  const [budget, setBudget] = useState({ salaryGross: 2300, salaryNet: 2080, partnerNet: 0, rent: 713, apl: 0 })
 
   // ── Check session on load ──
   useEffect(() => {
@@ -126,15 +127,35 @@ export default function Home() {
   }
 
   const handleAddPosition = async (pos) => {
-    const sec = ALL_SECURITIES.find(s => s.symbol === pos.symbol)
-    await addPosition(user.id, {
-      symbol: pos.symbol,
-      name: pos.name || sec?.name || pos.symbol,
-      quantity: pos.qty,
-      buyPrice: pos.pru,
-    })
-    await loadPositions(user.id)
-    setShowAdd(false)
+    // Check if position already exists for this symbol
+    const existing = positions.find(p => p.symbol === pos.symbol)
+    if (existing) {
+      // Merge: calculate weighted average PRU
+      const oldQty = Number(existing.quantity)
+      const oldPru = Number(existing.buy_price)
+      const newQty = pos.qty
+      const newPru = pos.pru
+      const totalQty = oldQty + newQty
+      const weightedPru = ((oldQty * oldPru) + (newQty * newPru)) / totalQty
+      // Update existing position
+      await supabase.from('positions').update({
+        quantity: totalQty,
+        buy_price: Math.round(weightedPru * 100) / 100
+      }).eq('id', existing.id)
+      await loadPositions(user.id)
+      setShowAdd(false)
+    } else {
+      // New position
+      const sec = ALL_SECURITIES.find(s => s.symbol === pos.symbol)
+      await addPosition(user.id, {
+        symbol: pos.symbol,
+        name: pos.name || sec?.name || pos.symbol,
+        quantity: pos.qty,
+        buyPrice: pos.pru,
+      })
+      await loadPositions(user.id)
+      setShowAdd(false)
+    }
   }
 
   const handleDeletePosition = async (posId, e) => {
@@ -161,9 +182,9 @@ export default function Home() {
             <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg,#22d3ee,#6366f1)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Space Mono', monospace", fontWeight: 700, fontSize: 14, color: '#fff' }}>P</div>
             <span style={{ fontWeight: 700, fontSize: 16, color: '#f1f5f9' }}>PortfolioLab</span>
           </div>
-          {['dashboard','market','projection','exposure'].map(id => (
+          {['dashboard','market','projection','exposure','budget'].map(id => (
             <button key={id} onClick={() => setPage(id)} style={{ background: page === id ? '#1e293b' : 'transparent', color: page === id ? '#22d3ee' : '#64748b', border: 'none', padding: '7px 14px', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.2s' }}>
-              {id === 'dashboard' ? '📊 Portfolio' : id === 'market' ? '🏛 Marché' : id === 'projection' ? '📈 Projections' : '🎯 Exposition'}
+              {id === 'dashboard' ? '📊 Portfolio' : id === 'market' ? '🏛 Marché' : id === 'projection' ? '📈 Projections' : id === 'exposure' ? '🎯 Exposition' : '💰 Budget'}
             </button>
           ))}
         </div>
@@ -178,6 +199,7 @@ export default function Home() {
         {page === 'market' && <MarketPage openStock={openStock} gp={gp} prices={prices} />}
         {page === 'projection' && <ProjPage p={proj} setP={setProj} tv={tv} ti={ti} />}
         {page === 'exposure' && <ExpoPage positions={positions} gp={gp} />}
+        {page === 'budget' && <BudgetPage b={budget} setB={setBudget} />}
         {page === 'stock' && selSym && <StockPage sym={selSym} gp={gp} goBack={() => setPage('dashboard')} prices={prices} positions={positions} />}
       </div>
 
@@ -821,6 +843,195 @@ function ExpoPage({ positions, gp }) {
             <Bars data={data} colors={colors} />
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BUDGET — Méthode 50/25/25
+// ═══════════════════════════════════════════════════════════════
+function BudgetPage({ b, setB }) {
+  const totalIncome = b.salaryNet + b.partnerNet
+  const rentAfterApl = Math.max(0, b.rent - b.apl)
+
+  // Rent split proportional to income
+  const myRentShare = b.partnerNet > 0 ? Math.round(rentAfterApl * (b.salaryNet / totalIncome)) : rentAfterApl
+  const partnerRentShare = b.partnerNet > 0 ? Math.round(rentAfterApl * (b.partnerNet / totalIncome)) : 0
+
+  // 50/25/25 based on MY net salary after my rent share
+  const myAfterRent = b.salaryNet - myRentShare
+  const needs = Math.round(myAfterRent * 0.50)      // Besoins (charges, courses, transport, etc.)
+  const wants = Math.round(myAfterRent * 0.25)       // Plaisirs
+  const invest = Math.round(myAfterRent * 0.25)      // Épargne/Investissement
+
+  // Generate rent split curve based on partner salary
+  const curveData = []
+  for (let ps = 0; ps <= 2500; ps += 100) {
+    const tot = b.salaryNet + ps
+    const myShare = ps > 0 ? Math.round(rentAfterApl * (b.salaryNet / tot)) : rentAfterApl
+    const partShare = ps > 0 ? Math.round(rentAfterApl * (ps / tot)) : 0
+    curveData.push({ ps, my: myShare, part: partShare })
+  }
+  const maxRent = Math.max(...curveData.map(d => d.my), rentAfterApl)
+
+  const inputStyle = { background: '#0a0e17', border: '1px solid #1e293b', color: '#f1f5f9', width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, fontFamily: "'Space Mono', monospace", outline: 'none', boxSizing: 'border-box', textAlign: 'right' }
+  const labelStyle = { display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 5 }
+  const cardStyle = { background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 18 }
+
+  return (
+    <div>
+      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>💰 Budget — Méthode 50/25/25</h2>
+      <p style={{ margin: '0 0 16px', fontSize: 12, color: '#94a3b8' }}>50% besoins essentiels • 25% plaisirs • 25% épargne/investissement</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 14 }}>
+        {/* Left: Inputs */}
+        <div style={cardStyle}>
+          <h3 style={{ margin: '0 0 16px', fontSize: 13, fontWeight: 600, color: '#22d3ee' }}>📝 Vos revenus</h3>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Votre salaire brut</label>
+            <div style={{ position: 'relative' }}>
+              <input type="number" value={b.salaryGross} onChange={e => setB({...b, salaryGross: Number(e.target.value)})} style={inputStyle} />
+              <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 12 }}>€</span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Votre salaire net (après impôt)</label>
+            <div style={{ position: 'relative' }}>
+              <input type="number" value={b.salaryNet} onChange={e => setB({...b, salaryNet: Number(e.target.value)})} style={inputStyle} />
+              <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 12 }}>€</span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Salaire net de votre copine</label>
+            <div style={{ position: 'relative' }}>
+              <input type="number" value={b.partnerNet} onChange={e => setB({...b, partnerNet: Number(e.target.value)})} style={inputStyle} />
+              <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 12 }}>€</span>
+            </div>
+            <div style={{ fontSize: 9, color: '#64748b', marginTop: 3 }}>Mettez 0 si pas de revenu actuellement</div>
+          </div>
+
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14, marginTop: 14 }}>
+            <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 600, color: '#22d3ee' }}>🏠 Logement</h3>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Loyer mensuel</label>
+              <div style={{ position: 'relative' }}>
+                <input type="number" value={b.rent} onChange={e => setB({...b, rent: Number(e.target.value)})} style={inputStyle} />
+                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 12 }}>€</span>
+              </div>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={labelStyle}>APL mensuelles</label>
+              <div style={{ position: 'relative' }}>
+                <input type="number" value={b.apl} onChange={e => setB({...b, apl: Number(e.target.value)})} style={inputStyle} />
+                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 12 }}>€</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Results */}
+        <div>
+          {/* Rent split */}
+          <div style={{ ...cardStyle, marginBottom: 14 }}>
+            <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>🏠 Répartition du loyer</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+              <div style={{ background: '#0a0e17', borderRadius: 8, padding: 14, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>Loyer après APL</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b', fontFamily: "'Space Mono', monospace" }}>{rentAfterApl} €</div>
+              </div>
+              <div style={{ background: '#0a0e17', borderRadius: 8, padding: 14, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>Votre part</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#22d3ee', fontFamily: "'Space Mono', monospace" }}>{myRentShare} €</div>
+                <div style={{ fontSize: 9, color: '#64748b' }}>{totalIncome > 0 ? Math.round(myRentShare / rentAfterApl * 100) : 100}%</div>
+              </div>
+              <div style={{ background: '#0a0e17', borderRadius: 8, padding: 14, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>Sa part</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#a78bfa', fontFamily: "'Space Mono', monospace" }}>{partnerRentShare} €</div>
+                <div style={{ fontSize: 9, color: '#64748b' }}>{totalIncome > 0 && b.partnerNet > 0 ? Math.round(partnerRentShare / rentAfterApl * 100) : 0}%</div>
+              </div>
+            </div>
+
+            {/* Rent curve */}
+            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>Évolution de la répartition selon le salaire de votre copine</div>
+            <svg viewBox="0 0 700 200" style={{ width: '100%', height: 180 }}>
+              {[0,.25,.5,.75,1].map(p => {
+                const y = 180 - p * 160
+                return <g key={p}><line x1="50" y1={y} x2="670" y2={y} stroke="#1e293b" /><text x="45" y={y+4} fill="#64748b" fontSize="8" textAnchor="end" fontFamily="Space Mono">{Math.round(maxRent*p)}€</text></g>
+              })}
+              {curveData.filter((_, i) => i % 5 === 0).map(d => (
+                <text key={d.ps} x={50 + (d.ps / 2500) * 620} y={196} fill="#64748b" fontSize="7" textAnchor="middle" fontFamily="Space Mono">{d.ps}€</text>
+              ))}
+              <polyline points={curveData.map(d => (50 + (d.ps / 2500) * 620) + ',' + (180 - (d.my / maxRent) * 160)).join(' ')} fill="none" stroke="#22d3ee" strokeWidth="2.5" />
+              <polyline points={curveData.map(d => (50 + (d.ps / 2500) * 620) + ',' + (180 - (d.part / maxRent) * 160)).join(' ')} fill="none" stroke="#a78bfa" strokeWidth="2.5" />
+              {b.partnerNet > 0 && <line x1={50 + (b.partnerNet / 2500) * 620} y1="20" x2={50 + (b.partnerNet / 2500) * 620} y2="180" stroke="#f59e0b" strokeWidth="1" strokeDasharray="4,3" />}
+            </svg>
+            <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 4 }}>
+              <span style={{ fontSize: 10, color: '#22d3ee' }}>━━ Vous</span>
+              <span style={{ fontSize: 10, color: '#a78bfa' }}>━━ Copine</span>
+              {b.partnerNet > 0 && <span style={{ fontSize: 10, color: '#f59e0b' }}>┆ Salaire actuel</span>}
+            </div>
+          </div>
+
+          {/* 50/25/25 breakdown */}
+          <div style={{ ...cardStyle }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>📊 Répartition 50/25/25</h3>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 14 }}>Basée sur votre salaire net ({b.salaryNet}€) moins votre part de loyer ({myRentShare}€) = <span style={{ color: '#22d3ee', fontWeight: 700 }}>{myAfterRent}€</span> disponibles</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+              {[
+                ['🏠 Besoins (50%)', needs, '#ef4444', 'Courses, transport, téléphone, assurance, abonnements essentiels'],
+                ['🎮 Plaisirs (25%)', wants, '#f59e0b', 'Sorties, restos, shopping, loisirs, Spotify, Netflix'],
+                ['📈 Investissement (25%)', invest, '#10b981', 'PEA, épargne, crypto, formation'],
+              ].map(([label, amount, color, desc]) => (
+                <div key={label} style={{ background: '#0a0e17', borderRadius: 10, padding: 16, position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: color }} />
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>{label}</div>
+                  <div style={{ fontSize: 26, fontWeight: 700, color: color, fontFamily: "'Space Mono', monospace", marginBottom: 6 }}>{amount} €</div>
+                  <div style={{ fontSize: 9, color: '#64748b', lineHeight: 1.4 }}>{desc}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Budget bar */}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>Répartition visuelle de votre salaire</div>
+              <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', height: 28 }}>
+                <div style={{ width: (myRentShare / b.salaryNet * 100) + '%', background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>Loyer {myRentShare}€</div>
+                <div style={{ width: (needs / b.salaryNet * 100) + '%', background: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>Besoins {needs}€</div>
+                <div style={{ width: (wants / b.salaryNet * 100) + '%', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>Plaisirs {wants}€</div>
+                <div style={{ width: (invest / b.salaryNet * 100) + '%', background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>Invest {invest}€</div>
+              </div>
+            </div>
+
+            {/* Monthly summary */}
+            <div style={{ marginTop: 16, padding: 14, background: '#0a0e17', borderRadius: 8 }}>
+              <h4 style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>📋 Récap mensuel</h4>
+              {[
+                ['Salaire net', b.salaryNet + ' €', '#22d3ee'],
+                ['- Votre part loyer', '- ' + myRentShare + ' €', '#6366f1'],
+                ['= Reste à répartir', myAfterRent + ' €', '#f1f5f9'],
+                [''],
+                ['→ Besoins (50%)', needs + ' €', '#ef4444'],
+                ['→ Plaisirs (25%)', wants + ' €', '#f59e0b'],
+                ['→ Investissement (25%)', invest + ' €', '#10b981'],
+                [''],
+                ['Votre copine doit vous donner', partnerRentShare + ' €', '#a78bfa'],
+              ].map((item, i) => {
+                if (!item[0]) return <div key={i} style={{ height: 8 }} />
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: item[0].startsWith('=') ? '1px solid #1e293b' : 'none' }}>
+                    <span style={{ fontSize: 11, color: item[0].startsWith('=') || item[0].startsWith('Votre copine') ? '#f1f5f9' : '#94a3b8', fontWeight: item[0].startsWith('=') || item[0].startsWith('Votre copine') ? 700 : 400 }}>{item[0]}</span>
+                    <span style={{ fontSize: 11, fontFamily: "'Space Mono', monospace", fontWeight: 700, color: item[2] }}>{item[1]}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
