@@ -473,112 +473,200 @@ function StockPage({ sym, gp, goBack, prices, positions }) {
   const sec = ALL_SECURITIES.find(s => s.symbol === sym)
   const [det, setDet] = useState(null)
   const [ld, setLd] = useState(false)
-  const [analysis, setAnalysis] = useState(null)
-  const [analysisLd, setAnalysisLd] = useState(false)
-  const [analysisErr, setAnalysisErr] = useState('')
+  const [news, setNews] = useState([])
+  const [newsLd, setNewsLd] = useState(false)
   const pos = positions.find(p => p.symbol === sym)
+  const posInPortfolio = positions.find(p => p.symbol === sym)
 
-  const load = async () => {
-    if (ld) return
+  useEffect(() => {
+    // Auto-load data + news
     setLd(true)
-    const d = await fetchStockDetail(sym)
-    if (d) setDet(d)
-    setLd(false)
-  }
-
-  const loadAnalysis = async () => {
-    setAnalysisLd(true); setAnalysisErr('')
-    try {
-      const res = await fetch('/api/analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: sym, name: det?.name || sec?.name || sym })
-      })
-      const data = await res.json()
-      if (data.error) setAnalysisErr(data.error)
-      else setAnalysis(data.analysis)
-    } catch (e) { setAnalysisErr('Erreur de connexion') }
-    finally { setAnalysisLd(false) }
-  }
-
-  useEffect(() => { load() }, [sym])
+    fetchStockDetail(sym).then(d => { if (d) setDet(d); setLd(false) })
+    setNewsLd(true)
+    fetch('/api/news?symbols=' + sym).then(r => r.json()).then(d => setNews(d.news || [])).catch(() => {}).finally(() => setNewsLd(false))
+  }, [sym])
 
   const price = det?.price || gp(sym)
-  const stockName = det?.name || sec?.name || sym
-  const btnStyle = { background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }
+  const stockName = det?.name || sec?.name || pos?.name || sym
   const kv = (l, v, c) => (
-    <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-      <span style={{ fontSize: 10, color: '#64748b' }}>{l}</span>
-      <span style={{ fontSize: 10, fontFamily: "'Space Mono', monospace", fontWeight: 600, color: c }}>{v}</span>
+    <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #1e293b10' }}>
+      <span style={{ fontSize: 11, color: '#94a3b8' }}>{l}</span>
+      <span style={{ fontSize: 11, fontFamily: "'Space Mono', monospace", fontWeight: 600, color: c }}>{v}</span>
     </div>
   )
 
+  // Build analysis summary from Yahoo data
+  const buildAnalysis = () => {
+    if (!det) return null
+    const items = []
+    if (det.per) {
+      const perVal = Number(det.per)
+      items.push({ label: 'Valorisation (PER)', value: perVal.toFixed(1), verdict: perVal < 12 ? 'Sous-évalué' : perVal < 20 ? 'Correctement valorisé' : perVal < 35 ? 'Valorisation élevée' : 'Très cher', color: perVal < 12 ? '#10b981' : perVal < 20 ? '#22d3ee' : perVal < 35 ? '#f59e0b' : '#ef4444' })
+    }
+    if (det.dividendYield) {
+      const dy = Number(det.dividendYield)
+      items.push({ label: 'Rendement dividende', value: dy.toFixed(2) + '%', verdict: dy > 4 ? 'Rendement élevé' : dy > 2 ? 'Rendement correct' : dy > 0 ? 'Rendement faible' : 'Pas de dividende', color: dy > 4 ? '#10b981' : dy > 2 ? '#22d3ee' : '#f59e0b' })
+    }
+    if (det.beta) {
+      const b = Number(det.beta)
+      items.push({ label: 'Volatilité (Bêta)', value: b.toFixed(2), verdict: b < 0.8 ? 'Défensif' : b < 1.2 ? 'Neutre' : 'Volatil', color: b < 0.8 ? '#10b981' : b < 1.2 ? '#22d3ee' : '#f59e0b' })
+    }
+    if (det.high52 && det.low52 && price) {
+      const range = ((price - det.low52) / (det.high52 - det.low52) * 100)
+      items.push({ label: 'Position dans le range 52s', value: range.toFixed(0) + '%', verdict: range > 80 ? 'Proche des plus hauts' : range > 50 ? 'Milieu de range' : range > 20 ? 'Milieu-bas de range' : 'Proche des plus bas', color: range > 80 ? '#f59e0b' : range > 50 ? '#22d3ee' : range > 20 ? '#22d3ee' : '#10b981' })
+    }
+    if (det.avg50 && det.avg200 && price) {
+      const above50 = price > det.avg50
+      const above200 = price > det.avg200
+      const trend = above50 && above200 ? 'Tendance haussière' : !above50 && !above200 ? 'Tendance baissière' : 'Signal mixte'
+      items.push({ label: 'Tendance technique', value: (above50 ? '> MM50' : '< MM50') + ' / ' + (above200 ? '> MM200' : '< MM200'), verdict: trend, color: trend === 'Tendance haussière' ? '#10b981' : trend === 'Tendance baissière' ? '#ef4444' : '#f59e0b' })
+    }
+    if (det.consensus) {
+      const c = det.consensus
+      items.push({ label: 'Consensus analystes', value: c, verdict: det.targetPrice ? 'Objectif: ' + det.targetPrice + ' € (' + ((det.targetPrice - price) / price * 100).toFixed(1) + '%)' : '', color: c.includes('Achat') ? '#10b981' : c === 'Neutre' ? '#f59e0b' : '#ef4444' })
+    }
+    return items
+  }
+
+  const analysisItems = buildAnalysis()
+
   return (
     <div>
-      <button onClick={goBack} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', marginBottom: 10 }}>← Retour</button>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+      <button onClick={goBack} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', marginBottom: 12 }}>← Retour</button>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 700, color: '#f1f5f9' }}>{stockName}</h1>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontFamily: "'Space Mono', monospace", color: '#64748b', fontSize: 11 }}>{sym}</span>
-            {sec && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: (SC[sec.sector]||'#64748b')+'18', color: SC[sec.sector] }}>{sec.sector}</span>}
+            {det?.sector && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: '#9B59B618', color: '#9B59B6', fontWeight: 600 }}>{det.sector}</span>}
+            {det?.industry && <span style={{ fontSize: 9, color: '#64748b' }}>{det.industry}</span>}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 26, fontWeight: 700, color: '#f1f5f9' }}>{price > 0 ? price.toFixed(2)+' €' : '—'}</div>
-          {det?.changePct != null && <div style={{ color: det.changePct>=0?'#10b981':'#ef4444', fontSize: 12, fontFamily: "'Space Mono', monospace", fontWeight: 600 }}>{det.changePct>=0?'▲':'▼'} {Math.abs(det.changePct).toFixed(2)}%</div>}
+          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 28, fontWeight: 700, color: '#f1f5f9' }}>{price > 0 ? price.toFixed(2) + ' €' : '—'}</div>
+          {det?.changePct != null && <div style={{ color: det.changePct >= 0 ? '#10b981' : '#ef4444', fontSize: 13, fontFamily: "'Space Mono', monospace", fontWeight: 600 }}>{det.changePct >= 0 ? '▲' : '▼'} {Math.abs(det.changePct).toFixed(2)}%</div>}
         </div>
       </div>
 
-      {ld && <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>Chargement des données...</div>}
+      {ld && <div style={{ fontSize: 12, color: '#22d3ee', marginBottom: 10 }}>Chargement des données Yahoo Finance...</div>}
 
-      {det ? (
+      {det && (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+          {/* Row 1: Key metrics + Dividends + Technique */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
             <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Données Clés</h3>
-              {[['Prix', price.toFixed(2)+' €', '#22d3ee'], det.per&&['PER',Number(det.per).toFixed(1),det.per<15?'#10b981':det.per<25?'#f59e0b':'#ef4444'], det.eps&&['BPA',det.eps+' €','#22d3ee'], det.marketCap&&['Cap.',(det.marketCap/1e9).toFixed(1)+' Md€','#94a3b8'], det.beta&&['Bêta',Number(det.beta).toFixed(2),'#94a3b8'], det.high52&&['+Haut 52s',det.high52+' €','#10b981'], det.low52&&['+Bas 52s',det.low52+' €','#ef4444']].filter(Boolean).map(([l,v,c])=>kv(l,v,c))}
+              <h3 style={{ margin: '0 0 10px', fontSize: 12, color: '#22d3ee', fontWeight: 700 }}>📊 Bilan</h3>
+              {[['Prix', price.toFixed(2)+' €', '#22d3ee'],
+                det.per && ['PER', Number(det.per).toFixed(1), det.per<15?'#10b981':det.per<25?'#f59e0b':'#ef4444'],
+                det.eps && ['BPA', det.eps+' €', '#22d3ee'],
+                det.marketCap && ['Capitalisation', det.marketCap > 1e9 ? (det.marketCap/1e9).toFixed(1)+' Md€' : (det.marketCap/1e6).toFixed(0)+' M€', '#94a3b8'],
+                det.beta && ['Bêta', Number(det.beta).toFixed(2), det.beta < 1 ? '#10b981' : '#f59e0b'],
+                det.avgVolume && ['Volume moyen', Number(det.avgVolume).toLocaleString('fr-FR'), '#94a3b8'],
+                det.high52 && ['+ Haut 52 semaines', det.high52+' €', '#10b981'],
+                det.low52 && ['+ Bas 52 semaines', det.low52+' €', '#ef4444'],
+              ].filter(Boolean).map(([l,v,c]) => kv(l,v,c))}
             </div>
+
             <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Dividendes & Consensus</h3>
-              {det.dividend ? [['Dividende',det.dividend+' €','#22d3ee'], det.dividendYield&&['Rendement',det.dividendYield+'%','#10b981'], det.exDividendDate&&['Ex-div',det.exDividendDate,'#f1f5f9']].filter(Boolean).map(([l,v,c])=>kv(l,v,c)) : <div style={{ fontSize: 10, color: '#64748b' }}>Pas de dividende</div>}
-              {det.consensus && <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #1e293b', textAlign: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: String(det.consensus).includes('Achat')?'#10b981':det.consensus==='Neutre'?'#f59e0b':'#ef4444' }}>{det.consensus}</div>
-                {det.targetPrice && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Objectif: <span style={{ color: '#22d3ee', fontWeight: 700 }}>{det.targetPrice} €</span></div>}
-              </div>}
+              <h3 style={{ margin: '0 0 10px', fontSize: 12, color: '#22d3ee', fontWeight: 700 }}>💰 Dividendes</h3>
+              {det.dividend && Number(det.dividend) > 0 ? (
+                <div>
+                  {[['Montant annuel', det.dividend+' €', '#22d3ee'],
+                    det.dividendYield && ['Rendement', det.dividendYield+'%', '#10b981'],
+                    det.exDividendDate && ['Date ex-dividende', det.exDividendDate, '#f1f5f9'],
+                  ].filter(Boolean).map(([l,v,c]) => kv(l,v,c))}
+                  {posInPortfolio && <div style={{ marginTop: 10, padding: 8, background: '#0a0e17', borderRadius: 6 }}>
+                    <div style={{ fontSize: 9, color: '#64748b' }}>Vos dividendes annuels estimés</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#22d3ee', fontFamily: "'Space Mono', monospace" }}>{(Number(det.dividend) * posInPortfolio.quantity).toFixed(2)} €</div>
+                  </div>}
+                </div>
+              ) : <div style={{ fontSize: 11, color: '#64748b', padding: '10px 0' }}>Pas de dividende versé</div>}
+
+              <h3 style={{ margin: '14px 0 10px', fontSize: 12, color: '#22d3ee', fontWeight: 700 }}>🎯 Consensus</h3>
+              {det.consensus ? (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: String(det.consensus).includes('Achat')?'#10b981':det.consensus==='Neutre'?'#f59e0b':'#ef4444' }}>{det.consensus}</div>
+                  {det.targetPrice && <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>Objectif: <span style={{ color: '#22d3ee', fontWeight: 700 }}>{det.targetPrice} €</span></div>}
+                  {det.targetPrice && price > 0 && <div style={{ fontSize: 11, color: ((det.targetPrice - price) / price) >= 0 ? '#10b981' : '#ef4444', marginTop: 2 }}>Potentiel: {((det.targetPrice - price) / price * 100).toFixed(1)}%</div>}
+                  {det.analystCount && <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>{det.analystCount} analystes</div>}
+                </div>
+              ) : <div style={{ fontSize: 11, color: '#64748b' }}>Non disponible</div>}
             </div>
+
             <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 16 }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Technique</h3>
+              <h3 style={{ margin: '0 0 10px', fontSize: 12, color: '#22d3ee', fontWeight: 700 }}>📐 Technique</h3>
               {det.support && kv('Support', det.support+' €', '#10b981')}
               {det.resistance && kv('Résistance', det.resistance+' €', '#ef4444')}
-              {det.avg50 && kv('MM50', Number(det.avg50).toFixed(2)+' €', '#94a3b8')}
-              {det.avg200 && kv('MM200', Number(det.avg200).toFixed(2)+' €', '#94a3b8')}
-              {det.nextEarnings && kv('Résultats', det.nextEarnings, '#f1f5f9')}
+              {det.avg50 && kv('Moyenne mobile 50j', Number(det.avg50).toFixed(2)+' €', price > det.avg50 ? '#10b981' : '#ef4444')}
+              {det.avg200 && kv('Moyenne mobile 200j', Number(det.avg200).toFixed(2)+' €', price > det.avg200 ? '#10b981' : '#ef4444')}
+              {det.support && det.resistance && price > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 4 }}>Position dans le range</div>
+                  <div style={{ height: 6, background: '#1e293b', borderRadius: 3, position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: Math.min(100, Math.max(0, ((price - det.support) / (det.resistance - det.support)) * 100)) + '%', top: -3, width: 12, height: 12, background: '#22d3ee', borderRadius: '50%', transform: 'translateX(-50%)', border: '2px solid #111827' }} />
+                  </div>
+                </div>
+              )}
+              {det.nextEarnings && <div style={{ marginTop: 12 }}>{kv('📊 Prochains résultats', det.nextEarnings, '#f59e0b')}</div>}
             </div>
           </div>
 
-          {/* GS Analysis section */}
-          <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 18, marginBottom: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>🏦 Analyse Fondamentale</h3>
-              <button onClick={loadAnalysis} disabled={analysisLd} style={{ ...btnStyle, background: analysisLd ? '#1e293b' : 'linear-gradient(135deg,#f59e0b,#ef4444)', opacity: analysisLd ? 0.5 : 1 }}>
-                {analysisLd ? '↻ Analyse en cours...' : analysis ? '🔄 Relancer l\'analyse' : '📊 Lancer l\'analyse GS'}
-              </button>
+          {/* Row 2: Analysis + News */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {/* Yahoo-based Analysis */}
+            <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 18 }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700, color: '#f1f5f9' }}>🏦 Analyse rapide</h3>
+              {analysisItems && analysisItems.length > 0 ? (
+                <div>
+                  {analysisItems.map((item, i) => (
+                    <div key={i} style={{ padding: '10px 0', borderBottom: i < analysisItems.length - 1 ? '1px solid #1e293b20' : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}>{item.label}</span>
+                        <span style={{ fontSize: 12, fontFamily: "'Space Mono', monospace", fontWeight: 700, color: item.color }}>{item.value}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: item.color, fontWeight: 600 }}>{item.verdict}</div>
+                    </div>
+                  ))}
+                  {/* Overall score */}
+                  <div style={{ marginTop: 14, padding: 12, background: '#0a0e17', borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>Signal global</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: det.consensus && String(det.consensus).includes('Achat') ? '#10b981' : det.consensus === 'Neutre' ? '#f59e0b' : '#94a3b8' }}>
+                      {det.consensus && String(det.consensus).includes('Achat') ? '📈 Positif' : det.consensus === 'Neutre' ? '➡️ Neutre' : det.consensus && String(det.consensus).includes('Vente') ? '📉 Négatif' : '⏳ En attente de données'}
+                    </div>
+                    <div style={{ fontSize: 9, color: '#64748b', marginTop: 4 }}>Basé sur les données Yahoo Finance en temps réel</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', padding: 16 }}>Données insuffisantes pour l'analyse</div>
+              )}
             </div>
-            {analysisErr && <div style={{ background: '#7f1d1d18', border: '1px solid #991b1b30', borderRadius: 7, padding: '8px 12px', color: '#fca5a5', fontSize: 11, marginBottom: 8 }}>{analysisErr}</div>}
-            {analysisLd && <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: 12 }}>L'analyse prend 15-30 secondes... L'IA recherche et compile les données en temps réel.</div>}
-            {analysis && (
-              <div style={{ background: '#0a0e17', borderRadius: 8, padding: 16, maxHeight: 500, overflowY: 'auto', fontSize: 12, color: '#e2e8f0', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
-                {analysis}
-              </div>
-            )}
-            {!analysis && !analysisLd && !analysisErr && <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', padding: 10 }}>Cliquez pour obtenir une analyse détaillée style Goldman Sachs avec notation, valorisation, scénarios haussier/baissier et verdict.</div>}
+
+            {/* News */}
+            <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 18, maxHeight: 450, overflowY: 'auto' }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700, color: '#f1f5f9' }}>📰 Actualités {stockName}</h3>
+              {newsLd && <div style={{ fontSize: 11, color: '#64748b', padding: 8 }}>Chargement...</div>}
+              {!newsLd && news.length === 0 && <div style={{ fontSize: 11, color: '#64748b', padding: 8 }}>Aucune actualité récente trouvée</div>}
+              {news.map((n, i) => (
+                <a key={i} href={n.link} target="_blank" rel="noopener noreferrer" style={{ display: 'block', padding: '10px 8px', background: '#0a0e17', borderRadius: 7, marginBottom: 6, textDecoration: 'none', border: '1px solid transparent', transition: 'border-color 0.15s' }} onMouseEnter={e => e.currentTarget.style.borderColor='#22d3ee30'} onMouseLeave={e => e.currentTarget.style.borderColor='transparent'}>
+                  <div style={{ fontSize: 11, color: '#f1f5f9', lineHeight: 1.4, marginBottom: 4 }}>{n.title}</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 9, color: '#94a3b8' }}>{n.publisher}</span>
+                    {n.publishedAt && <span style={{ fontSize: 9, color: '#64748b' }}>{new Date(n.publishedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
         </div>
-      ) : !ld && (
+      )}
+
+      {!det && !ld && (
         <div style={{ background: '#111827', borderRadius: 10, border: '1px solid #1e293b', padding: 36, textAlign: 'center' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
-          <button onClick={load} style={btnStyle}>Charger les données</button>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>Impossible de charger les données pour ce titre</div>
+          <button onClick={() => { setLd(true); fetchStockDetail(sym).then(d => { if (d) setDet(d); setLd(false) }) }} style={{ background: 'linear-gradient(135deg,#22d3ee,#6366f1)', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}>Réessayer</button>
         </div>
       )}
     </div>
